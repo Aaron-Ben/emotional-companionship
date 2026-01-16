@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { sendMessage, sendMessageStream, getChatStarter } from '../services/chatService';
-import type { DisplayMessage, ChatRequest, Message, CurrentTurn, DialoguePhase } from '../types/chat';
+import type { DisplayMessage, ChatRequest, Message, CurrentTurn } from '../types/chat';
 
 const DEFAULT_CHARACTER_ID = 'sister_001';
 const STORAGE_KEY = 'chat_history';

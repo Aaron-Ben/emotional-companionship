@@ -6,6 +6,7 @@ from datetime import datetime
 
 from app.services.llms.base import LLMBase
 from app.services.character_service import CharacterService
+from app.services.diary_service import DiaryService
 from app.models.character import UserCharacterPreference
 from app.schemas.message import (
     ChatRequest,
@@ -20,21 +21,24 @@ class ChatService:
     Enhanced chat service that integrates character personalities with LLM services.
     """
 
-    def __init__(self, llm: LLMBase, character_service: CharacterService):
+    def __init__(self, llm: LLMBase, character_service: CharacterService, diary_service: Optional[DiaryService] = None):
         """
         Initialize chat service.
 
         Args:
             llm: LLM instance to use for generating responses
             character_service: Character service for managing personalities
+            diary_service: Optional diary service for memory context
         """
         self.llm = llm
         self.character_service = character_service
+        self.diary_service = diary_service
 
     async def chat(
         self,
         request: ChatRequest,
-        user_preferences: Optional[UserCharacterPreference] = None
+        user_preferences: Optional[UserCharacterPreference] = None,
+        user_id: str = "user_default"
     ) -> ChatResponse:
         """
         Generate a character-aware response.
@@ -42,6 +46,7 @@ class ChatService:
         Args:
             request: Chat request with message and character info
             user_preferences: Optional user preferences
+            user_id: User ID for diary retrieval
 
         Returns:
             ChatResponse: Character's response with metadata
@@ -61,6 +66,16 @@ class ChatService:
             user_preferences=user_preferences,
             context=message_context.dict() if message_context else None
         )
+
+        # Add diary context if available
+        if self.diary_service:
+            diary_context = await self._get_diary_context(
+                character_id=request.character_id,
+                user_id=user_id,
+                current_message=request.message
+            )
+            if diary_context:
+                system_prompt = self._add_diary_context_to_prompt(system_prompt, diary_context)
 
         # Build messages list
         messages = [{"role": "system", "content": system_prompt}]
@@ -87,7 +102,8 @@ class ChatService:
     async def chat_stream(
         self,
         request: ChatRequest,
-        user_preferences: Optional[UserCharacterPreference] = None
+        user_preferences: Optional[UserCharacterPreference] = None,
+        user_id: str = "user_default"
     ) -> AsyncGenerator[str, None]:
         """
         Generate a streaming character-aware response.
@@ -95,6 +111,7 @@ class ChatService:
         Args:
             request: Chat request with message and character info
             user_preferences: Optional user preferences
+            user_id: User ID for diary retrieval
 
         Yields:
             str: Chunks of the character's response
@@ -115,6 +132,16 @@ class ChatService:
             context=message_context.dict() if message_context else None
         )
 
+        # Add diary context if available
+        if self.diary_service:
+            diary_context = await self._get_diary_context(
+                character_id=request.character_id,
+                user_id=user_id,
+                current_message=request.message
+            )
+            if diary_context:
+                system_prompt = self._add_diary_context_to_prompt(system_prompt, diary_context)
+
         # Build messages list
         messages = [{"role": "system", "content": system_prompt}]
 
@@ -128,6 +155,79 @@ class ChatService:
         # Stream response
         for chunk in self.llm.generate_response_stream(messages):
             yield chunk
+
+    async def _get_diary_context(
+        self,
+        character_id: str,
+        user_id: str,
+        current_message: str
+    ) -> Optional[str]:
+        """
+        Get relevant diary entries for context.
+
+        Args:
+            character_id: Character ID
+            user_id: User ID
+            current_message: Current user message
+
+        Returns:
+            Formatted diary context or None
+        """
+        if not self.diary_service:
+            return None
+
+        try:
+            relevant_diaries = await self.diary_service.get_relevant_diaries(
+                character_id=character_id,
+                user_id=user_id,
+                current_message=current_message,
+                limit=3
+            )
+
+            if not relevant_diaries:
+                return None
+
+            return self._format_diary_context(relevant_diaries)
+        except Exception as e:
+            # Log error but don't fail the chat
+            print(f"Error getting diary context: {e}")
+            return None
+
+    def _format_diary_context(self, diaries: List) -> str:
+        """
+        Format diary entries as context.
+
+        Args:
+            diaries: List of diary entries
+
+        Returns:
+            Formatted context string
+        """
+        context_parts = ["## 之前的回忆\n\n"]
+
+        for diary in diaries:
+            context_parts.append(f"**{diary.date}的日记**\n{diary.content}\n")
+
+        return "\n".join(context_parts)
+
+    def _add_diary_context_to_prompt(self, system_prompt: str, diary_context: str) -> str:
+        """
+        Add diary context to system prompt.
+
+        Args:
+            system_prompt: Original system prompt
+            diary_context: Formatted diary context
+
+        Returns:
+            Enhanced system prompt with diary context
+        """
+        return f"""{system_prompt}
+
+{diary_context}
+
+请参考这些回忆，在对话中可以自然地提及过去的事情，让对话更有连续性和亲切感。
+但不要刻意提及，要自然融入。
+"""
 
     def _detect_emotion(self, message: str) -> Optional[EmotionState]:
         """

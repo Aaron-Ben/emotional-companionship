@@ -5,9 +5,11 @@ import { RPGChatPanel } from '../components/conversation';
 import { CharacterInfoModal } from '../components/character';
 import { ChatHistory } from '../components/history';
 import { FloatingActionButton } from '../components/ui';
+import { DiaryListModal, DiaryDetailModal } from '../components/diary';
 import { useChat } from '../hooks/useChat';
 import { useCharacter } from '../hooks/useCharacter';
 import backgroundImage from '/background/image.png';
+import type { DiaryEntry } from '../services/diaryService';
 
 interface ChatPageProps {
   onBack: () => void;
@@ -16,6 +18,9 @@ interface ChatPageProps {
 export const ChatPage: React.FC<ChatPageProps> = ({ onBack }) => {
   const [showInfo, setShowInfo] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showDiaries, setShowDiaries] = useState(false);
+  const [showDiaryDetail, setShowDiaryDetail] = useState(false);
+  const [selectedDiary, setSelectedDiary] = useState<DiaryEntry | null>(null);
   const [userInput, setUserInput] = useState('');
 
   const {
@@ -39,6 +44,12 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onBack }) => {
   const handleClearHistory = () => {
     clearHistory();
     setShowHistory(false);
+  };
+
+  const handleSelectDiary = (diary: DiaryEntry) => {
+    setSelectedDiary(diary);
+    setShowDiaries(false);
+    setShowDiaryDetail(true);
   };
 
   return (
@@ -86,18 +97,25 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onBack }) => {
 
       {/* Floating Buttons */}
       <FloatingActionButton
+        onClick={() => setShowDiaries(true)}
+        icon="📔"
+        ariaLabel="日记本"
+        position="bottom-right"
+        index={0}
+      />
+      <FloatingActionButton
         onClick={() => setShowHistory(true)}
         icon="💬"
         ariaLabel="对话历史"
         position="bottom-right"
-        index={0}
+        index={1}
       />
       <FloatingActionButton
         onClick={() => setShowInfo(true)}
         icon="⭐"
         ariaLabel="角色信息"
         position="bottom-right"
-        index={1}
+        index={2}
       />
 
       {/* Modals */}
@@ -111,6 +129,16 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onBack }) => {
         onClose={() => setShowHistory(false)}
         messages={messages}
         onClear={handleClearHistory}
+      />
+      <DiaryListModal
+        isOpen={showDiaries}
+        onClose={() => setShowDiaries(false)}
+        onSelectDiary={handleSelectDiary}
+      />
+      <DiaryDetailModal
+        diary={selectedDiary}
+        isOpen={showDiaryDetail}
+        onClose={() => setShowDiaryDetail(false)}
       />
     </div>
   );
