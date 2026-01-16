@@ -10,7 +10,7 @@ load_dotenv()
 
 from app.api.v1 import character, chat, diary
 from app.services.character_service import CharacterService
-from app.services.diary_service import DiaryService
+from app.services.diary import DiaryService
 from app.models.database import init_db
 
 

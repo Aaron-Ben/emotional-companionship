@@ -28,4 +28,4 @@ lerna-debug.log*
 # frontend
 frontend/package-lock.json
 backend/.env
-backend/app/diaries
+backend/app/services/diaries

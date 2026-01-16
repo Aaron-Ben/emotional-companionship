@@ -1,6 +1,6 @@
 """Chat API endpoints for character-based conversations."""
 
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Any
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from datetime import datetime
@@ -11,11 +11,10 @@ from app.services.llms.qwen import QwenLLM
 from app.services.llms.deepseek import DeepSeekLLM
 from app.services.character_service import CharacterService
 from app.services.chat_service import ChatService
-from app.services.diary_service import DiaryService
-from app.services.diary_triggers import DiaryTriggerManager
+from app.services.diary import DiaryService, DiaryTriggerManager
 from app.models.character import UserCharacterPreference
 from app.models.diary import DiaryTriggerType
-from app.schemas.message import ChatRequest, ChatResponse, StreamChatResponse
+from app.schemas.message import ChatRequest, ChatResponse, StreamChatResponse, DiaryAssessment
 
 # Create router
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
@@ -84,6 +83,44 @@ def get_trigger_manager(user_id: str, character_id: str) -> DiaryTriggerManager:
     return _diary_trigger_managers[key]
 
 
+async def extract_and_save_diary(
+    character_id: str,
+    user_id: str,
+    conversation_messages: List[Dict[str, str]],
+    diary_assessment: DiaryAssessment,
+    llm: QwenLLM | DeepSeekLLM,
+    diary_service: DiaryService
+):
+    """
+    Extract and save diary from actual conversation (async).
+
+    This runs in the background after a response is sent.
+    Only called when AI determines the conversation is worth recording.
+    """
+    try:
+        if not diary_assessment.should_record:
+            return
+
+        logger.info(
+            f"Extracting diary for {user_id}/{character_id}: "
+            f"category={diary_assessment.category}, "
+            f"reason={diary_assessment.reason}"
+        )
+
+        await diary_service.extract_diary_from_conversation(
+            llm=llm,
+            character_id=character_id,
+            user_id=user_id,
+            conversation_messages=conversation_messages,
+            assessment=diary_assessment
+        )
+
+        logger.info(f"Diary extracted and saved for {user_id}/{character_id}")
+
+    except Exception as e:
+        logger.error(f"Error extracting diary: {e}")
+
+
 async def check_and_generate_diary(
     message: str,
     character_id: str,
@@ -97,6 +134,7 @@ async def check_and_generate_diary(
     Check if diary should be triggered and generate it.
 
     This runs in the background after a response is sent.
+    DEPRECATED: Use extract_and_save_diary with AI assessment instead.
     """
     try:
         trigger_manager = get_trigger_manager(user_id, character_id)
@@ -201,18 +239,30 @@ async def chat(
             user_id=user_id
         )
 
-        # Trigger diary generation in background (don't wait for it)
-        asyncio.create_task(
-            check_and_generate_diary(
-                message=request.message,
-                character_id=request.character_id,
-                user_id=user_id,
-                response_message=response.message,
-                emotion_detected=response.emotion_detected,
-                llm=llm,
-                diary_service=diary_service
+        # If AI assessed this conversation as worth recording, extract diary asynchronously
+        if response.diary_assessment and response.diary_assessment.should_record:
+            # Build complete conversation messages
+            conversation_messages = []
+
+            # Add conversation history if provided
+            if request.conversation_history:
+                conversation_messages.extend(request.conversation_history)
+
+            # Add current user message and AI response
+            conversation_messages.append({"role": "user", "content": request.message})
+            conversation_messages.append({"role": "assistant", "content": response.message})
+
+            # Trigger async diary extraction (don't wait for it)
+            asyncio.create_task(
+                extract_and_save_diary(
+                    character_id=request.character_id,
+                    user_id=user_id,
+                    conversation_messages=conversation_messages,
+                    diary_assessment=response.diary_assessment,
+                    llm=llm,
+                    diary_service=diary_service
+                )
             )
-        )
 
         return response
     except Exception as e:

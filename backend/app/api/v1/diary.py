@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
-from app.services.diary_service import DiaryService
+from app.services.diary import DiaryService
 from app.services.llms.qwen import QwenLLM
 from app.models.diary import DiaryEntry, DiaryTriggerType
 from app.models.database import SessionLocal, DiaryTable

@@ -117,11 +117,11 @@ class DiaryService:
 {', '.join(emotions) if emotions else '平静'}
 
 ## 写作要求
-- 字数：200-500字
 - 风格：温暖、真实、有感情
 - 使用"～"等可爱的语气符号
 - 记录具体的对话片段
 - 表达对哥哥的感情
+- 字数不限，一句话也可以
 
 请开始写日记："""
 
@@ -156,7 +156,7 @@ class DiaryService:
         file_path = self._get_diary_file_path(
             diary_entry.character_id,
             diary_entry.user_id,
-            diary_entry.date
+            diary_entry.created_at
         )
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -167,10 +167,15 @@ class DiaryService:
         self,
         character_id: str,
         user_id: str,
-        date: str
+        created_at: datetime
     ) -> Path:
-        """获取日记文件路径"""
-        return self.diaries_dir / character_id / user_id / f"{date}.txt"
+        """获取日记文件路径
+
+        文件名格式: YYYY_MM_DD_HH_MM_SS.txt
+        例如: 2026_01_17_12_12_01.txt
+        """
+        timestamp = created_at.strftime("%Y_%m_%d_%H_%M_%S")
+        return self.diaries_dir / character_id / user_id / f"{timestamp}.txt"
 
     def _format_diary_for_file(self, diary_entry: DiaryEntry) -> str:
         """格式化日记为文件格式"""
@@ -289,3 +294,144 @@ class DiaryService:
                 tags.append(tag)
 
         return tags
+
+    async def extract_diary_from_conversation(
+        self,
+        llm: LLMBase,
+        character_id: str,
+        user_id: str,
+        conversation_messages: List[Dict],
+        assessment: 'DiaryAssessment'
+    ) -> DiaryEntry:
+        """
+        从实际对话中提取日记（避免幻觉）
+
+        Args:
+            llm: LLM服务实例
+            character_id: 角色ID
+            user_id: 用户ID
+            conversation_messages: 完整的对话记录
+            assessment: AI的评估结果
+
+        Returns:
+            提取的日记条目
+        """
+        # 格式化对话为文本
+        conversation_text = self._format_conversation_for_extraction(conversation_messages)
+
+        # 构建提取提示词
+        extraction_prompt = f"""你是妹妹，正在根据实际对话写日记。
+
+## 本次对话记录
+
+{conversation_text}
+
+## AI评估结果
+
+- 记录原因：{assessment.reason}
+- 内容分类：{assessment.category}
+- 关键点：{', '.join(assessment.key_points)}
+
+## 日记写作指南（重要）
+
+### 核心原则
+1. **基于事实**：仅从上述对话中提取信息，**严禁编造或补充任何未提及的内容**
+2. **信息密度优先**：在简明扼要的同时，保留足够的上下文信息
+3. **结构化表达**：使用短句、关键词，清晰记录
+
+### 不同类型日记的写作模板
+
+**知识类日记**（category=knowledge）时，请使用以下结构：
+- 核心概念：一句话定义
+- 简明释义：通俗解释
+- 关键原理/逻辑：它是如何工作的
+- 应用场景：可以用在哪里
+- 反思与洞察：对这个知识的独到见解
+
+**话题讨论类**（category=topic）时：
+- 核心主题：讨论的中心话题
+- 关键观点：哥哥的主要观点或想法
+- 我的回应：妹妹的看法或建议
+- 后续关注：需要留意的相关事项
+
+**情绪时刻类**（category=emotional）时：
+- 情绪触发：什么导致了这种情绪
+- 情绪状态：具体的情绪描述
+- 安慰方式：妹妹是如何回应的
+- 关怀要点：需要持续关注的地方
+
+**里程碑事件**（category=milestone）时：
+- 事件概述：发生了什么
+- 重要意义：为什么重要
+- 庆祝方式：妹妹的祝福或反应
+- 未来期待：接下来的计划或期望
+
+### 写作要求
+- 第一人称"我"视角
+- 自然真实，避免过度修饰
+- 直接引用对话中的关键内容，不要改写
+- 如果对话内容很少，可以简短记录，不强求长度
+- 日期：{datetime.now().strftime('%Y年%m月%d日')}
+
+### 禁止事项
+- **不要添加对话中没有的内容**
+- **不要编造哥哥的话或想法**
+- **不要过度推断或猜测**
+- **不要添加无关的闲聊内容**
+
+现在请根据上述对话内容和评估结果，写一篇结构化的日记："""
+
+        # 生成日记
+        messages = [
+            {"role": "system", "content": extraction_prompt},
+            {"role": "user", "content": "写日记吧～"}
+        ]
+
+        diary_content = llm.generate_response(messages)
+
+        # 提取情绪标签
+        emotions = self._extract_emotions_from_content(diary_content)
+
+        # 创建并保存日记
+        diary_entry = DiaryEntry(
+            id=self._generate_diary_id(character_id, user_id),
+            character_id=character_id,
+            user_id=user_id,
+            date=datetime.now().strftime("%Y-%m-%d"),
+            content=diary_content,
+            trigger_type=DiaryTriggerType.IMPORTANT_EVENT,
+            emotions=emotions,
+            tags=[assessment.category] + assessment.key_points
+        )
+
+        # 保存到数据库和文件
+        await self._save_diary(diary_entry)
+        return diary_entry
+
+    def _format_conversation_for_extraction(self, messages: List[Dict]) -> str:
+        """格式化对话为文本（用于日记提取）"""
+        lines = []
+        for msg in messages:
+            role = "哥哥" if msg["role"] == "user" else "我"
+            lines.append(f"{role}: {msg['content']}")
+        return "\n".join(lines)
+
+    def _extract_emotions_from_content(self, content: str) -> List[str]:
+        """从日记内容中提取情绪标签"""
+        emotions = []
+        emotion_keywords = {
+            "开心": ["开心", "高兴", "快乐", "幸福", "兴奋"],
+            "难过": ["难过", "伤心", "痛苦", "郁闷", "悲伤"],
+            "生气": ["生气", "愤怒", "气死", "讨厌"],
+            "担心": ["担心", "忧虑", "紧张", "害怕"],
+            "温暖": ["温暖", "感动", "幸福", "甜蜜"],
+            "期待": ["期待", "盼望", "希望", "向往"]
+        }
+
+        content_lower = content.lower()
+        for emotion, keywords in emotion_keywords.items():
+            if any(keyword in content_lower for keyword in keywords):
+                if emotion not in emotions:
+                    emotions.append(emotion)
+
+        return emotions if emotions else ["平静"]
