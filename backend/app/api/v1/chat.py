@@ -38,14 +38,20 @@ def get_character_service() -> CharacterService:
 def get_llm_service() -> QwenLLM | DeepSeekLLM:
     """
     Dependency injection for LLM service.
-    Uses Qwen by default, can be configured via environment.
+    Uses DeepSeek-V3 by default, can be configured via environment.
 
     Note: Requires DASHSCOPE_API_KEY or DEEPSEEK_API_KEY environment variable.
     """
     import os
-    # For now, default to Qwen
-    # In production, this would be configurable
-    return QwenLLM()
+
+    # Check if user wants to use Qwen via environment variable
+    llm_provider = os.getenv("LLM_PROVIDER", "deepseek").lower()
+
+    if llm_provider == "qwen":
+        return QwenLLM()
+
+    # Default to DeepSeek-V3
+    return DeepSeekLLM(config={"model": "deepseek-chat"})
 
 
 def get_mock_user_id() -> str:

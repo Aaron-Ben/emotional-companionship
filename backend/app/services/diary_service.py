@@ -149,6 +149,10 @@ class DiaryService:
             db.close()
 
         # 保存到文件系统
+        self._update_diary_file(diary_entry)
+
+    def _update_diary_file(self, diary_entry: DiaryEntry):
+        """更新日记文件（不修改数据库，只更新文件）"""
         file_path = self._get_diary_file_path(
             diary_entry.character_id,
             diary_entry.user_id,

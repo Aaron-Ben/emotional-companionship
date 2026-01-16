@@ -5,7 +5,7 @@ import { RPGChatPanel } from '../components/conversation';
 import { CharacterInfoModal } from '../components/character';
 import { ChatHistory } from '../components/history';
 import { FloatingActionButton } from '../components/ui';
-import { DiaryListModal, DiaryDetailModal } from '../components/diary';
+import { DiaryListModal, DiaryDetailModal, DiaryEditModal } from '../components/diary';
 import { useChat } from '../hooks/useChat';
 import { useCharacter } from '../hooks/useCharacter';
 import backgroundImage from '/background/image.png';
@@ -20,6 +20,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onBack }) => {
   const [showHistory, setShowHistory] = useState(false);
   const [showDiaries, setShowDiaries] = useState(false);
   const [showDiaryDetail, setShowDiaryDetail] = useState(false);
+  const [showDiaryEdit, setShowDiaryEdit] = useState(false);
   const [selectedDiary, setSelectedDiary] = useState<DiaryEntry | null>(null);
   const [userInput, setUserInput] = useState('');
 
@@ -50,6 +51,18 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onBack }) => {
     setSelectedDiary(diary);
     setShowDiaries(false);
     setShowDiaryDetail(true);
+  };
+
+  const handleEditDiary = (diary: DiaryEntry) => {
+    setSelectedDiary(diary);
+    setShowDiaries(false);
+    setShowDiaryDetail(false);
+    setShowDiaryEdit(true);
+  };
+
+  const handleDiaryUpdate = (updatedDiary: DiaryEntry) => {
+    setSelectedDiary(updatedDiary);
+    // Refresh diary list if needed
   };
 
   return (
@@ -134,11 +147,18 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onBack }) => {
         isOpen={showDiaries}
         onClose={() => setShowDiaries(false)}
         onSelectDiary={handleSelectDiary}
+        onEditDiary={handleEditDiary}
       />
       <DiaryDetailModal
         diary={selectedDiary}
         isOpen={showDiaryDetail}
         onClose={() => setShowDiaryDetail(false)}
+      />
+      <DiaryEditModal
+        isOpen={showDiaryEdit}
+        onClose={() => setShowDiaryEdit(false)}
+        diary={selectedDiary}
+        onUpdate={handleDiaryUpdate}
       />
     </div>
   );

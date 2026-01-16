@@ -35,6 +35,16 @@ export async function getLatestDiary(characterId: string = 'sister_001'): Promis
   return response.json();
 }
 
+export async function getDiaryById(diaryId: string): Promise<DiaryEntry> {
+  const response = await fetch(`${API_BASE}/api/v1/diary/${diaryId}`);
+
+  if (!response.ok) {
+    throw new Error(`Failed to get diary: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
 export async function generateDiary(data: {
   character_id: string;
   conversation_summary: string;
@@ -49,6 +59,39 @@ export async function generateDiary(data: {
 
   if (!response.ok) {
     throw new Error(`Failed to generate diary: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export async function updateDiary(
+  diaryId: string,
+  data: {
+    content: string;
+    emotions: string[];
+    tags: string[];
+  }
+): Promise<{ diary: DiaryEntry; message: string }> {
+  const response = await fetch(`${API_BASE}/api/v1/diary/${diaryId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to update diary: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export async function deleteDiary(diaryId: string): Promise<{ message: string; diary_id: string }> {
+  const response = await fetch(`${API_BASE}/api/v1/diary/${diaryId}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete diary: ${response.statusText}`);
   }
 
   return response.json();
