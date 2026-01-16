@@ -11,7 +11,7 @@ interface ChatInputProps {
 export const ChatInput: React.FC<ChatInputProps> = ({
   onSend,
   disabled = false,
-  placeholder = '和妹妹聊聊天吧～',
+  placeholder = '陪妹妹聊聊天吧～',
 }) => {
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);

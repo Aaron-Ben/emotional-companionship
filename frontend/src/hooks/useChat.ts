@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { sendMessage, sendMessageStream, getChatStarter } from '../services/chatService';
-import type { DisplayMessage, ChatRequest, Message } from '../types/chat';
+import type { DisplayMessage, ChatRequest, Message, CurrentTurn, DialoguePhase } from '../types/chat';
 
 const DEFAULT_CHARACTER_ID = 'sister_001';
 const STORAGE_KEY = 'chat_history';
@@ -12,6 +12,14 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
   const [loading, setLoading] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState('');
   const errorRef = useRef<string | null>(null);
+
+  // Current turn state for RPG dialogue style
+  const [currentTurn, setCurrentTurn] = useState<CurrentTurn>({
+    phase: 'user_input',
+    userMessage: '',
+    aiMessage: '',
+    timestamp: new Date(),
+  });
 
   // Load history from localStorage on mount
   useState(() => {
@@ -168,6 +176,13 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
   const clearHistory = useCallback(() => {
     setMessages([]);
     localStorage.removeItem(`${STORAGE_KEY}_${characterId}`);
+    // Reset current turn
+    setCurrentTurn({
+      phase: 'user_input',
+      userMessage: '',
+      aiMessage: '',
+      timestamp: new Date(),
+    });
   }, [characterId]);
 
   const getStarter = useCallback(async () => {
@@ -180,6 +195,91 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
     }
   }, [characterId]);
 
+  // RPG style: Submit user message and start AI reply
+  const submitUserMessage = useCallback(async (content: string) => {
+    if (!content.trim() || loading) return;
+
+    setLoading(true);
+    errorRef.current = null;
+
+    // Update current turn to show user message
+    setCurrentTurn({
+      phase: 'ai_reply',
+      userMessage: content.trim(),
+      aiMessage: '',
+      timestamp: new Date(),
+    });
+
+    // Add user message to history
+    const userMessage: DisplayMessage = {
+      id: `user-${Date.now()}`,
+      content: content.trim(),
+      isUser: true,
+      timestamp: new Date(),
+    };
+    addMessage(userMessage);
+
+    // Build conversation history for API
+    const conversationHistory: Message[] = messages
+      .slice(-10)
+      .map((msg) => ({
+        role: msg.isUser ? 'user' : 'assistant',
+        content: msg.content,
+      }));
+
+    const request: ChatRequest = {
+      message: content,
+      character_id: characterId,
+      conversation_history: conversationHistory,
+    };
+
+    try {
+      let fullResponse = '';
+      for await (const chunk of sendMessageStream(request)) {
+        fullResponse += chunk;
+        // Update current turn with streaming response
+        setCurrentTurn((prev) => ({
+          ...prev,
+          aiMessage: fullResponse,
+        }));
+      }
+
+      // Add AI message to history
+      const assistantMessage: DisplayMessage = {
+        id: `assistant-${Date.now()}`,
+        content: fullResponse,
+        isUser: false,
+        timestamp: new Date(),
+      };
+      addMessage(assistantMessage);
+
+      // Update phase to completed
+      setCurrentTurn((prev) => ({
+        ...prev,
+        phase: 'completed',
+        aiMessage: fullResponse,
+      }));
+    } catch (err) {
+      errorRef.current = err instanceof Error ? err.message : 'Failed to send message';
+      setCurrentTurn((prev) => ({
+        ...prev,
+        phase: 'user_input',
+      }));
+    } finally {
+      setLoading(false);
+    }
+  }, [messages, characterId, loading, addMessage]);
+
+  // RPG style: Start a new conversation turn
+  const startNewTurn = useCallback(() => {
+    setCurrentTurn({
+      phase: 'user_input',
+      userMessage: '',
+      aiMessage: '',
+      timestamp: new Date(),
+    });
+  }, []);
+
   return {
     messages,
     loading,
@@ -189,5 +289,9 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
     sendStream,
     clearHistory,
     getStarter,
+    // RPG style
+    currentTurn,
+    submitUserMessage,
+    startNewTurn,
   };
 }

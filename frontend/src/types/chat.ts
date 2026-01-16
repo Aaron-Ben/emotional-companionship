@@ -52,3 +52,13 @@ export interface ConversationHistory {
   characterId: string;
   lastUpdated: Date;
 }
+
+// RPG game dialogue style types
+export type DialoguePhase = 'user_input' | 'ai_reply' | 'completed';
+
+export interface CurrentTurn {
+  phase: DialoguePhase;
+  userMessage: string;
+  aiMessage: string;
+  timestamp: Date;
+}

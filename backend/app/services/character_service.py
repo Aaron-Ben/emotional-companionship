@@ -95,6 +95,43 @@ class CharacterService:
 
         return characters
 
+    def _get_datetime_context(self) -> str:
+        """
+        Get current date and time information for the character.
+
+        Returns:
+            str: Formatted date/time context string
+        """
+        from datetime import datetime
+
+        now = datetime.now()
+        weekdays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日']
+
+        # 获取时段
+        hour = now.hour
+        if 5 <= hour < 12:
+            period = "上午"
+        elif 12 <= hour < 14:
+            period = "中午"
+        elif 14 <= hour < 18:
+            period = "下午"
+        elif 18 <= hour < 22:
+            period = "晚上"
+        else:
+            period = "深夜"
+
+        return f"""
+## 当前时间信息
+
+今天是 {now.year}年{now.month}月{now.day}日，{weekdays[now.weekday()]}。
+现在是 {period} {now.hour}点{now.minute}分。
+
+请在对话中自然地运用这个时间信息，例如：
+- 询问哥哥今天/明天的计划
+- 提到今天是什么日子
+- 根据时间段调整问候语（早上好、晚上好等）
+"""
+
     def generate_system_prompt(
         self,
         character_id: str,
@@ -121,6 +158,10 @@ class CharacterService:
 
         # Start with base system prompt
         system_prompt = character.system_prompt.base
+
+        # 添加日期时间上下文
+        datetime_context = self._get_datetime_context()
+        system_prompt = datetime_context + "\n\n" + system_prompt
 
         # Apply user customizations
         if user_preferences:

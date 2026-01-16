@@ -50,7 +50,7 @@
 
 body {
   font-family: 'Nunito', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-tertiary) 100%);
+  background: transparent;
   color: var(--text-primary);
   margin: 0;
   padding: 0;
@@ -472,4 +472,292 @@ body {
 @keyframes float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-10px); }
+}
+
+/* ==================== RPG Game Dialogue Style ==================== */
+
+/* RPG主色调 */
+:root {
+  --rpg-pink: #e91e63;
+  --rpg-pink-light: #f8bbd0;
+  --rpg-pink-dark: #c2185b;
+  --rpg-border: #f48fb1;
+  --rpg-bg: #fff5f8;
+}
+
+/* 对话头部 - 显示当前轮次 */
+.dialogue-header {
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.dialogue-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: #ccc;
+  font-size: 16px;
+}
+
+.dialogue-message {
+  padding: 16px 20px;
+  border-radius: 16px;
+  position: relative;
+  animation: messageSlideIn 0.3s ease;
+  max-width: 80%;
+}
+
+@keyframes messageSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dialogue-message.user {
+  background: linear-gradient(135deg, #87CEEB 0%, #7EC8E3 100%);
+  align-self: flex-end;
+  margin-left: auto;
+}
+
+.dialogue-message.character {
+  background: linear-gradient(135deg, var(--rpg-pink-light) 0%, var(--rpg-pink) 100%);
+  align-self: flex-start;
+  margin-right: auto;
+}
+
+.dialogue-message .message-label {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  opacity: 0.9;
+}
+
+.dialogue-message .message-content {
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+/* RPG控制面板 */
+.rpg-chat-panel {
+  background: transparent;
+  padding: 16px;
+  box-shadow: 0 -4px 12px rgba(255, 192, 203, 0.15);
+}
+
+.rpg-panel-border {
+  width: 66%;
+  max-width: 700px;
+  margin: 0 auto;
+  border: 2px solid #FFC0CB;
+  border-radius: 16px;
+  padding: 16px;
+  background: transparent;
+}
+
+/* 用户输入区 */
+.user-input-area {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-input-area .textarea-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-input-area .input-label {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.user-input-area .rpg-textarea {
+  flex: 1;
+  min-height: 44px;
+  height: 44px;
+}
+
+.user-input-area .rpg-btn {
+  flex-shrink: 0;
+  height: 44px;
+  padding: 0 24px;
+  white-space: nowrap;
+}
+
+.user-input-area .input-hint {
+  margin-top: 4px;
+}
+
+.input-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--rpg-pink);
+  margin-bottom: 8px;
+}
+
+.input-hint {
+  font-size: 11px;
+  color: var(--text-light);
+  margin-top: 4px;
+}
+
+.rpg-textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #FFC0CB;
+  border-radius: 12px;
+  font-size: 15px;
+  font-family: inherit;
+  resize: none;
+  outline: none;
+  transition: all 0.2s ease;
+  background: white;
+  color: #333;
+  box-sizing: border-box;
+}
+
+.rpg-textarea:focus {
+  border-color: #FFB6C1;
+  box-shadow: 0 0 0 3px rgba(255, 182, 193, 0.2);
+  background: white;
+}
+
+.rpg-textarea::placeholder {
+  color: #ccc;
+}
+
+.rpg-textarea:disabled {
+  background: #f5f5f5;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* AI回复区 */
+.ai-response-area {
+  margin-bottom: 16px;
+  min-height: 80px;
+}
+
+.rpg-response-box {
+  padding: 16px;
+  background: linear-gradient(135deg, var(--rpg-pink-light) 0%, #ffeef4 100%);
+  border: 2px solid var(--rpg-pink-light);
+  border-radius: 12px;
+  min-height: 60px;
+  position: relative;
+}
+
+.response-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+}
+
+.rpg-response-box .response-content {
+  font-size: 15px;
+  line-height: 1.6;
+  color: #333;
+}
+
+/* 控制按钮 */
+.control-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.rpg-btn {
+  padding: 12px 32px;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(233, 30, 99, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+
+.rpg-btn-primary {
+  background: linear-gradient(135deg, var(--rpg-pink) 0%, var(--rpg-pink-dark) 100%);
+  color: white;
+}
+
+.rpg-btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(233, 30, 99, 0.3);
+}
+
+.rpg-btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.rpg-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rpg-btn-secondary {
+  background: white;
+  color: #FFC0CB;
+  border: 2px solid #FFC0CB;
+}
+
+.rpg-btn-secondary:hover {
+  background: #FFC0CB;
+  color: white;
+}
+
+.rpg-status-text {
+  padding: 12px 32px;
+  color: var(--rpg-pink);
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.loading-dots {
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* RPG响应式适配 */
+@media (max-width: 768px) {
+  .dialogue-message {
+    max-width: 90%;
+  }
+
+  .rpg-chat-panel {
+    padding: 12px;
+  }
+
+  .rpg-textarea {
+    font-size: 14px;
+  }
+
+  .rpg-btn {
+    padding: 10px 24px;
+    font-size: 14px;
+  }
 }

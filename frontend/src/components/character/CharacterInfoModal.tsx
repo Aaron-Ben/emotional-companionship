@@ -62,7 +62,7 @@ export const CharacterInfoModal: React.FC<CharacterInfoModalProps> = ({
             <span className="font-medium">{character.identity.age}岁</span>
           </div>
           <div className="flex justify-between">
-            <span class="text-gray-600">称呼你</span>
+            <span className="text-gray-600">称呼你</span>
             <span className="font-medium">{character.base_nickname}</span>
           </div>
         </div>

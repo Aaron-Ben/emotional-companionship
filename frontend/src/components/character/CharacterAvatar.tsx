@@ -9,7 +9,7 @@ interface CharacterAvatarProps {
 
 export const CharacterAvatar: React.FC<CharacterAvatarProps> = ({
   size = 'medium',
-  emoji = '👧',
+  emoji = '😊',
 }) => {
   const sizeClasses = {
     small: 'w-12 h-12 text-2xl',
