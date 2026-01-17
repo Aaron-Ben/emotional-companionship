@@ -13,6 +13,19 @@ export interface DiaryEntry {
   updated_at?: string;
 }
 
+/** Diary group by month for timeline display */
+export interface DiaryGroup {
+  year: number;
+  month: number;
+  monthLabel: string; // "2026年1月"
+  diaries: DiaryEntry[];
+  count: number;
+  expanded: boolean; // UI state: whether this group is expanded
+}
+
+/** Map key format: "year-month" e.g., "2026-1" */
+export type DiaryGroupMap = Record<string, DiaryEntry[]>;
+
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export async function listDiaries(characterId: string = 'sister_001', limit: number = 10): Promise<DiaryEntry[]> {
@@ -95,4 +108,51 @@ export async function deleteDiary(diaryId: string): Promise<{ message: string; d
   }
 
   return response.json();
+}
+
+/**
+ * Group diaries by month for timeline display
+ * @param diaries - Array of diary entries to group
+ * @returns Array of diary groups sorted by date (newest first)
+ */
+export function groupDiariesByMonth(diaries: DiaryEntry[]): DiaryGroup[] {
+  const groupMap: DiaryGroupMap = {};
+
+  diaries.forEach((diary) => {
+    const date = new Date(diary.date);
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1; // 1-12
+    const key = `${year}-${month}`;
+
+    if (!groupMap[key]) {
+      groupMap[key] = [];
+    }
+    groupMap[key].push(diary);
+  });
+
+  // Convert to array and sort by date (newest first)
+  const groups: DiaryGroup[] = Object.entries(groupMap)
+    .map(([key, diaries]) => {
+      const [year, month] = key.split('-').map(Number);
+      return {
+        year,
+        month,
+        monthLabel: `${year}年${month}月`,
+        diaries,
+        count: diaries.length,
+        expanded: false, // Default collapsed
+      };
+    })
+    .sort((a, b) => {
+      // Sort descending: newest month first
+      if (a.year !== b.year) return b.year - a.year;
+      return b.month - a.month;
+    });
+
+  // Expand the first (newest) group by default
+  if (groups.length > 0) {
+    groups[0].expanded = true;
+  }
+
+  return groups;
 }

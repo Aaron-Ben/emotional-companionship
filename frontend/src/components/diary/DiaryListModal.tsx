@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { listDiaries, deleteDiary, type DiaryEntry } from '../../services/diaryService';
 import { DiaryDeleteModal } from './DiaryDeleteModal';
+import { DiaryTimeline } from './DiaryTimeline';
 
 interface DiaryListModalProps {
   isOpen: boolean;
@@ -78,7 +79,7 @@ export const DiaryListModal: React.FC<DiaryListModalProps> = ({
         onClick={onClose}
       >
         <div
-          className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col"
+          className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -113,62 +114,12 @@ export const DiaryListModal: React.FC<DiaryListModalProps> = ({
                 <p className="text-sm">妹妹会记录和哥哥的重要时刻</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {diaries.map((diary) => (
-                  <div
-                    key={diary.id}
-                    className="bg-gradient-to-r from-pink-50 to-purple-50 rounded-xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer border border-pink-100 relative group"
-                    onClick={() => onSelectDiary?.(diary)}
-                  >
-                    {/* Action buttons - shown on hover */}
-                    <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={(e) => handleEdit(diary, e)}
-                        className="p-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm"
-                        title="编辑"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        onClick={(e) => handleDeleteClick(diary, e)}
-                        className="p-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 text-sm"
-                        title="删除"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-
-                    <div className="flex justify-between items-start mb-3 pr-16">
-                      <h3 className="font-bold text-gray-800 text-lg">{diary.date}</h3>
-                      <div className="flex gap-2 flex-wrap">
-                        {diary.emotions.map((emotion) => (
-                          <span
-                            key={emotion}
-                            className="text-xs px-2 py-1 bg-pink-200 text-pink-700 rounded-full font-medium"
-                          >
-                            {emotion}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <p className="text-gray-700 text-sm leading-relaxed line-clamp-3 whitespace-pre-wrap">
-                      {diary.content}
-                    </p>
-                    {diary.tags.length > 0 && (
-                      <div className="mt-3 flex gap-2 flex-wrap">
-                        {diary.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="text-xs px-2 py-1 bg-white text-pink-600 rounded border border-pink-200"
-                          >
-                            #{tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <DiaryTimeline
+                diaries={diaries}
+                onSelectDiary={onSelectDiary || (() => {})}
+                onEditDiary={handleEdit}
+                onDeleteDiary={(diary, e) => handleDeleteClick(diary, e)}
+              />
             )}
           </div>
         </div>

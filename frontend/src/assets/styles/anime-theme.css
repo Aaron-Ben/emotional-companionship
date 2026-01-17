@@ -761,3 +761,184 @@ body {
     font-size: 14px;
   }
 }
+
+/* ==================== Diary Timeline Styles ==================== */
+
+.diary-timeline-container {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+/* 侧边导航 */
+.month-nav {
+  position: sticky;
+  top: 20px;
+  width: 120px;
+  flex-shrink: 0;
+  max-height: calc(80vh - 40px);
+  overflow-y: auto;
+  padding: 12px;
+  background: linear-gradient(135deg, var(--anime-pink-light) 0%, white 100%);
+  border-radius: var(--border-radius-lg);
+  border: 2px solid var(--anime-pink-light);
+}
+
+.month-nav-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-left: 3px solid transparent;
+  margin-bottom: 8px;
+}
+
+.month-nav-item:last-child {
+  margin-bottom: 0;
+}
+
+.month-nav-item:hover {
+  background: var(--anime-pink-light);
+  color: var(--anime-pink-dark);
+  transform: translateX(4px);
+}
+
+.month-nav-item.active {
+  background: linear-gradient(135deg, var(--anime-pink) 0%, var(--anime-pink-dark) 100%);
+  color: white;
+  border-left-color: white;
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
+/* 时间线内容 */
+.diary-timeline-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 月份分组 */
+.month-group {
+  margin-bottom: 24px;
+  animation: fadeInUp 0.3s ease;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 月份标题 */
+.month-header {
+  background: linear-gradient(135deg, var(--anime-pink-light) 0%, var(--anime-purple) 100%);
+  border-left: 4px solid var(--anime-pink-dark);
+  padding: 12px 16px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  user-select: none;
+}
+
+.month-header:hover {
+  transform: translateX(4px);
+  box-shadow: var(--shadow-md);
+}
+
+.month-header.expanded {
+  background: linear-gradient(135deg, var(--anime-pink) 0%, var(--anime-pink-dark) 100%);
+  color: white;
+  border-left-color: white;
+}
+
+/* 日记列表包装器（动画） */
+.diary-list-wrapper {
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+}
+
+.diary-list-wrapper.expanded {
+  max-height: 5000px;
+  opacity: 1;
+}
+
+.diary-list-wrapper.collapsed {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* 日记列表 */
+.diary-list {
+  padding-left: 20px;
+  border-left: 2px dashed var(--anime-pink-light);
+  margin-left: 10px;
+}
+
+/* 日记卡片 */
+.diary-card {
+  margin-bottom: 12px;
+  margin-left: 20px;
+  animation: slideInLeft 0.3s ease;
+  position: relative;
+}
+
+.diary-card::before {
+  content: '';
+  position: absolute;
+  left: -26px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 10px;
+  height: 10px;
+  background: var(--anime-pink);
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 0 0 3px var(--anime-pink-light);
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 响应式 - 移动端 */
+@media (max-width: 768px) {
+  .diary-timeline-container {
+    flex-direction: column;
+  }
+
+  .month-nav {
+    display: none; /* 移动端隐藏侧边导航 */
+  }
+
+  .diary-timeline-content {
+    width: 100%;
+  }
+
+  .diary-list {
+    padding-left: 10px;
+    margin-left: 5px;
+  }
+
+  .diary-card {
+    margin-left: 10px;
+  }
+
+  .diary-card::before {
+    left: -16px;
+  }
+}
