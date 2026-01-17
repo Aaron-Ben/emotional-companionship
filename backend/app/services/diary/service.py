@@ -1,6 +1,7 @@
 """Diary service for managing character diary entries."""
 
 import os
+import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
@@ -9,6 +10,8 @@ from sqlalchemy.orm import Session
 from app.models.diary import DiaryEntry, DiaryTriggerType
 from app.models.database import SessionLocal, DiaryTable
 from app.services.llms.base import LLMBase
+
+logger = logging.getLogger(__name__)
 
 
 class DiaryService:
@@ -308,7 +311,7 @@ class DiaryService:
         user_id: str,
         conversation_messages: List[Dict],
         assessment: 'DiaryAssessment'
-    ) -> DiaryEntry:
+    ) -> Optional[DiaryEntry]:
         """
         从实际对话中提取日记（避免幻觉）
 
@@ -320,13 +323,78 @@ class DiaryService:
             assessment: AI的评估结果
 
         Returns:
-            提取的日记条目
+            提取的日记条目（如果质量检查未通过则返回None）
         """
         # 格式化对话为文本
         conversation_text = self._format_conversation_for_extraction(conversation_messages)
 
-        # 构建提取提示词
-        extraction_prompt = f"""你是妹妹，正在根据实际对话写日记。
+        # 构建提取提示词（增强版）
+        extraction_prompt = self._build_enhanced_extraction_prompt(
+            conversation_text, assessment
+        )
+
+        # 生成日记
+        messages = [
+            {"role": "system", "content": extraction_prompt},
+            {"role": "user", "content": "写日记吧～"}
+        ]
+
+        diary_content = llm.generate_response(messages)
+
+        # 使用AI生成标签（替代简单关键词匹配）
+        from app.services.diary.tag_generator import DiaryTagGenerator
+        tag_generator = DiaryTagGenerator()
+        tags = tag_generator.generate_tags(diary_content, assessment.category, llm)
+
+        # 质量检查
+        from app.services.diary.quality_checker import DiaryQualityChecker
+        quality_checker = DiaryQualityChecker()
+        recent_diaries = await quality_checker.get_recent_diaries(character_id, user_id, limit=5)
+        quality_result = quality_checker.check_diary_quality(diary_content, recent_diaries)
+
+        if not quality_result.is_acceptable:
+            logger.warning(f"Diary quality check failed: {quality_result.reason}")
+            return None
+
+        # 提取情绪标签
+        emotions = self._extract_emotions_from_content(diary_content)
+
+        # 创建并保存日记
+        diary_entry = DiaryEntry(
+            id=self._generate_diary_id(character_id, user_id),
+            character_id=character_id,
+            user_id=user_id,
+            date=datetime.now().strftime("%Y-%m-%d"),
+            content=diary_content,
+            trigger_type=DiaryTriggerType.IMPORTANT_EVENT,
+            emotions=emotions,
+            tags=tags
+        )
+
+        # 保存到数据库和文件
+        await self._save_diary(diary_entry)
+        return diary_entry
+
+    def _build_enhanced_extraction_prompt(
+        self,
+        conversation_text: str,
+        assessment: 'DiaryAssessment'
+    ) -> str:
+        """构建增强的日记提取提示词
+
+        包含：
+        1. 更严格的证据约束（直接引用要求）
+        2. 结构化输出格式（混合模式）
+        3. 保持温暖情感语调
+
+        Args:
+            conversation_text: 对话文本
+            assessment: AI评估结果
+
+        Returns:
+            增强的提取提示词
+        """
+        return f"""你是妹妹，正在根据实际对话写日记。
 
 ## 本次对话记录
 
@@ -345,32 +413,70 @@ class DiaryService:
 2. **信息密度优先**：在简明扼要的同时，保留足够的上下文信息
 3. **结构化表达**：使用短句、关键词，清晰记录
 
+### 引用要求（增强）
+- **必须直接引用**：对于关键信息，使用"哥哥说：..."或"哥哥提到：..."
+- **保留原文**：不要转述或改写关键句子
+- **标记引用**：使用引号标出直接引用的内容
+- **避免模糊表达**：不要用"哥哥似乎觉得"这样的模糊表达
+
+### 输出格式要求（混合模式）
+
+在自然日记的基础上，使用以下结构标记（保持"我"的视角和温暖语调）：
+
+```
+【对话主题】简述本次对话的核心内容
+
+【对话记录】
+哥哥：...
+我：...
+
+【关键信息】
+- 要点1
+- 要点2
+
+【我的感受】（保持温暖的情感表达）
+```
+
+请保持"我"的视角和温暖真实的语调，使用"～"等可爱符号。
+
 ### 不同类型日记的写作模板
 
 **知识类日记**（category=knowledge）时，请使用以下结构：
-- 核心概念：一句话定义
-- 简明释义：通俗解释
-- 关键原理/逻辑：它是如何工作的
-- 应用场景：可以用在哪里
-- 反思与洞察：对这个知识的独到见解
+【对话主题】今天学到的新知识
+【对话记录】哥哥分享了...的内容
+【关键信息】
+- 核心概念：...
+- 简明释义：...
+- 关键原理/逻辑：...
+- 应用场景：...
+【我的感受】学到了新知识，感觉收获满满～
 
 **话题讨论类**（category=topic）时：
-- 核心主题：讨论的中心话题
-- 关键观点：哥哥的主要观点或想法
-- 我的回应：妹妹的看法或建议
-- 后续关注：需要留意的相关事项
+【对话主题】讨论的核心话题
+【对话记录】哥哥提到：...，我回应说...
+【关键信息】
+- 核心主题：...
+- 关键观点：哥哥认为...
+- 我的看法：...
+【我的感受】和哥哥聊天总能让我学到东西～
 
 **情绪时刻类**（category=emotional）时：
-- 情绪触发：什么导致了这种情绪
-- 情绪状态：具体的情绪描述
-- 安慰方式：妹妹是如何回应的
-- 关怀要点：需要持续关注的地方
+【对话主题】情绪触发源
+【对话记录】哥哥说：...
+【关键信息】
+- 情绪触发：...
+- 情绪状态：...
+- 安慰方式：我...
+【我的感受】希望哥哥能好起来～
 
 **里程碑事件**（category=milestone）时：
-- 事件概述：发生了什么
-- 重要意义：为什么重要
-- 庆祝方式：妹妹的祝福或反应
-- 未来期待：接下来的计划或期望
+【对话主题】重要事件
+【对话记录】哥哥告诉我...
+【关键信息】
+- 事件概述：...
+- 重要意义：...
+- 未来期待：...
+【我的感受】为哥哥感到高兴～
 
 ### 写作要求
 - 第一人称"我"视角
@@ -379,40 +485,15 @@ class DiaryService:
 - 如果对话内容很少，可以简短记录，不强求长度
 - 日期：{datetime.now().strftime('%Y年%m月%d日')}
 
-### 禁止事项
+### 禁止事项（增强）
 - **不要添加对话中没有的内容**
 - **不要编造哥哥的话或想法**
 - **不要过度推断或猜测**
 - **不要添加无关的闲聊内容**
+- **不要用模糊表达替代具体信息**
+- **不要改写或总结关键对话内容，直接引用**
 
 现在请根据上述对话内容和评估结果，写一篇结构化的日记："""
-
-        # 生成日记
-        messages = [
-            {"role": "system", "content": extraction_prompt},
-            {"role": "user", "content": "写日记吧～"}
-        ]
-
-        diary_content = llm.generate_response(messages)
-
-        # 提取情绪标签
-        emotions = self._extract_emotions_from_content(diary_content)
-
-        # 创建并保存日记
-        diary_entry = DiaryEntry(
-            id=self._generate_diary_id(character_id, user_id),
-            character_id=character_id,
-            user_id=user_id,
-            date=datetime.now().strftime("%Y-%m-%d"),
-            content=diary_content,
-            trigger_type=DiaryTriggerType.IMPORTANT_EVENT,
-            emotions=emotions,
-            tags=[assessment.category] + assessment.key_points
-        )
-
-        # 保存到数据库和文件
-        await self._save_diary(diary_entry)
-        return diary_entry
 
     def _format_conversation_for_extraction(self, messages: List[Dict]) -> str:
         """格式化对话为文本（用于日记提取）"""
