@@ -11,7 +11,7 @@ from app.services.llms.qwen import QwenLLM
 from app.services.llms.deepseek import DeepSeekLLM
 from app.services.character_service import CharacterService
 from app.services.chat_service import ChatService
-from app.services.diary import DiaryService, DiaryTriggerManager
+from app.services.diary import DiaryService, DiaryTriggerManager, DiaryAssessmentService
 from app.models.character import UserCharacterPreference
 from app.models.diary import DiaryTriggerType
 from app.schemas.message import ChatRequest, ChatResponse, StreamChatResponse, DiaryAssessment
@@ -134,8 +134,12 @@ async def check_and_generate_diary(
     Check if diary should be triggered and generate it.
 
     This runs in the background after a response is sent.
-    DEPRECATED: Use extract_and_save_diary with AI assessment instead.
+    DEPRECATED: Use assess_and_extract_diary instead.
+    此函数由于幻觉问题已被废弃。
     """
+    import warnings
+    warnings.warn("check_and_generate_diary is deprecated. Use assess_and_extract_diary instead.", DeprecationWarning, stacklevel=2)
+
     try:
         trigger_manager = get_trigger_manager(user_id, character_id)
 
@@ -182,6 +186,59 @@ async def check_and_generate_diary(
 
     except Exception as e:
         logger.error(f"Error in check_and_generate_diary: {e}")
+
+
+async def assess_and_extract_diary(
+    character_id: str,
+    user_id: str,
+    conversation_history: Optional[List[Dict[str, str]]],
+    user_message: str,
+    assistant_response: str,
+    llm: QwenLLM | DeepSeekLLM,
+    diary_service: DiaryService
+):
+    """
+    评估对话并提取日记（如果值得记录）。
+    使用AI评估和完整对话上下文，替代旧的 check_and_generate_diary 函数。
+    """
+    try:
+        # 构建完整对话
+        conversation_messages = []
+        if conversation_history:
+            conversation_messages.extend(conversation_history)
+        conversation_messages.append({"role": "user", "content": user_message})
+        conversation_messages.append({"role": "assistant", "content": assistant_response})
+
+        # AI评估
+        assessment_service = DiaryAssessmentService()
+        assessment_messages = [
+            {"role": "system", "content": assessment_service.build_assessment_prompt()},
+            {"role": "user", "content": f"请评估以下对话是否值得记录进日记：\n\n" + "\n".join([f"{m['role']}: {m['content']}" for m in conversation_messages])}
+        ]
+
+        assessment_tool = assessment_service.get_diary_assessment_tool()
+        response = llm.generate_response(messages=assessment_messages, tools=[assessment_tool], tool_choice="auto")
+
+        # 提取评估结果
+        diary_assessment = None
+        if isinstance(response, dict) and "tool_calls" in response:
+            for tool_call in response.get("tool_calls", []):
+                if tool_call.get("name") == "assess_diary_worthiness":
+                    diary_assessment = DiaryAssessment(**tool_call.get("arguments", {}))
+                    break
+
+        # 如果值得记录，提取并保存日记
+        if diary_assessment and diary_assessment.should_record:
+            await diary_service.extract_diary_from_conversation(
+                llm=llm,
+                character_id=character_id,
+                user_id=user_id,
+                conversation_messages=conversation_messages,
+                assessment=diary_assessment
+            )
+
+    except Exception as e:
+        logger.error(f"Error in assess_and_extract_diary: {e}")
 
 
 @router.post("/", response_model=ChatResponse)
@@ -333,12 +390,12 @@ async def chat_stream(
             # Trigger diary generation after stream completes
             response_text = "".join(full_response)
             asyncio.create_task(
-                check_and_generate_diary(
-                    message=request.message,
+                assess_and_extract_diary(
                     character_id=request.character_id,
                     user_id=user_id,
-                    response_message=response_text,
-                    emotion_detected=None,  # Emotion detection not available in stream
+                    conversation_history=request.conversation_history,
+                    user_message=request.message,
+                    assistant_response=response_text,
                     llm=llm,
                     diary_service=diary_service
                 )

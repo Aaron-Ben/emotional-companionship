@@ -37,6 +37,9 @@ class DiaryService:
         """
         生成日记内容
 
+        .. DEPRECATED:: 使用 extract_diary_from_conversation 替代
+        此方法由于只接收对话摘要导致幻觉问题，已被废弃。
+
         Args:
             llm: LLM 服务实例
             character_id: 角色ID
@@ -49,6 +52,9 @@ class DiaryService:
         Returns:
             生成的日记条目
         """
+        import warnings
+        warnings.warn("generate_diary is deprecated and causes hallucinations. Use extract_diary_from_conversation instead.", DeprecationWarning, stacklevel=2)
+
         # 构建日记生成的系统提示词
         system_prompt = self._build_diary_prompt(
             character_id,
