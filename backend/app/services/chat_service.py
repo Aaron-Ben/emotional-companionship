@@ -6,8 +6,7 @@ from datetime import datetime
 
 from app.services.llms.base import LLMBase
 from app.services.character_service import CharacterService
-from app.services.diary import DiaryService
-from app.services.diary.assessment import DiaryAssessmentService
+from app.services.diary import DiaryCoreService, DiaryAssessmentService
 from app.models.character import UserCharacterPreference
 from app.schemas.message import (
     ChatRequest,
@@ -23,18 +22,17 @@ class ChatService:
     Enhanced chat service that integrates character personalities with LLM services.
     """
 
-    def __init__(self, llm: LLMBase, character_service: CharacterService, diary_service: Optional[DiaryService] = None):
+    def __init__(self, llm: LLMBase, character_service: CharacterService):
         """
         Initialize chat service.
 
         Args:
             llm: LLM instance to use for generating responses
             character_service: Character service for managing personalities
-            diary_service: Optional diary service for memory context
         """
         self.llm = llm
         self.character_service = character_service
-        self.diary_service = diary_service
+        self.diary_core_service = DiaryCoreService()
         self.diary_assessment_service = DiaryAssessmentService()
 
     async def chat(
@@ -74,7 +72,7 @@ class ChatService:
         system_prompt += self.diary_assessment_service.build_assessment_prompt()
 
         # Add diary context if available
-        if self.diary_service:
+        if self.diary_core_service:
             diary_context = await self._get_diary_context(
                 character_id=request.character_id,
                 user_id=user_id,
@@ -94,7 +92,7 @@ class ChatService:
         messages.append({"role": "user", "content": request.message})
 
         # Get diary assessment tool
-        diary_assessment_tool = self.diary_assessment_service.get_diary_assessment_tool()
+        diary_assessment_tool = self.diary_assessment_service.get_assessment_tool()
 
         # Generate response with function calling
         response = self.llm.generate_response(
@@ -164,7 +162,7 @@ class ChatService:
         )
 
         # Add diary context if available
-        if self.diary_service:
+        if self.diary_core_service:
             diary_context = await self._get_diary_context(
                 character_id=request.character_id,
                 user_id=user_id,
@@ -204,11 +202,11 @@ class ChatService:
         Returns:
             Formatted diary context or None
         """
-        if not self.diary_service:
+        if not self.diary_core_service:
             return None
 
         try:
-            relevant_diaries = await self.diary_service.get_relevant_diaries(
+            relevant_diaries = await self.diary_core_service.get_relevant_diaries(
                 character_id=character_id,
                 user_id=user_id,
                 current_message=current_message,

@@ -1,13 +1,12 @@
 """Diary API endpoints for managing character diary entries."""
 
 from typing import List, Optional
-from pathlib import Path
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
-from app.services.diary import DiaryService
-from app.services.llms.qwen import QwenLLM
-from app.models.diary import DiaryEntry, DiaryTriggerType
+from app.services.diary import DiaryCoreService
+from app.models.diary import DiaryEntry
 from app.models.database import SessionLocal, DiaryTable
 
 
@@ -16,14 +15,6 @@ router = APIRouter(prefix="/api/v1/diary", tags=["diary"])
 
 
 # Pydantic models for request/response
-class GenerateDiaryRequest(BaseModel):
-    """生成日记请求"""
-    character_id: str = Field(..., description="角色ID")
-    conversation_summary: str = Field(..., description="对话摘要")
-    trigger_type: DiaryTriggerType = Field(..., description="触发类型")
-    emotions: List[str] = Field(default_factory=list, description="情绪列表")
-
-
 class UpdateDiaryRequest(BaseModel):
     """更新日记请求"""
     content: str = Field(..., description="日记内容")
@@ -38,14 +29,9 @@ class DiaryResponse(BaseModel):
 
 
 # Dependency injection
-def get_diary_service():
-    """获取日记服务实例"""
-    return DiaryService()
-
-
-def get_llm_service():
-    """获取LLM服务实例"""
-    return QwenLLM()
+def get_diary_core_service():
+    """获取日记核心服务实例"""
+    return DiaryCoreService()
 
 
 def get_mock_user_id():
@@ -53,52 +39,10 @@ def get_mock_user_id():
     return "user_default"
 
 
-@router.post("/generate", response_model=DiaryResponse)
-async def generate_diary(
-    request: GenerateDiaryRequest,
-    user_id: str = Depends(get_mock_user_id),
-    diary_service: DiaryService = Depends(get_diary_service),
-    llm = Depends(get_llm_service)
-):
-    """
-    手动生成日记
-
-    用于测试或手动触发日记生成
-
-    Request Body:
-    ```json
-    {
-        "character_id": "sister_001",
-        "conversation_summary": "今天哥哥跟我说他涨工资了...",
-        "trigger_type": "important_event",
-        "emotions": ["happy", "excited"]
-    }
-    ```
-    """
-    try:
-        diary = await diary_service.generate_diary(
-            llm=llm,
-            character_id=request.character_id,
-            user_id=user_id,
-            conversation_summary=request.conversation_summary,
-            trigger_type=request.trigger_type,
-            emotions=request.emotions,
-            context={}
-        )
-
-        return DiaryResponse(
-            diary=diary,
-            message="日记生成成功"
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"生成日记失败: {str(e)}")
-
-
 @router.get("/list", response_model=List[DiaryEntry])
 async def list_diaries(
     character_id: str,
     user_id: str = Depends(get_mock_user_id),
-    diary_service: DiaryService = Depends(get_diary_service),
     limit: int = 10
 ):
     """
@@ -126,8 +70,7 @@ async def list_diaries(
                     user_id=db_diary.user_id,
                     date=db_diary.date,
                     content=db_diary.content,
-                    trigger_type=DiaryTriggerType(db_diary.trigger_type),
-                    related_conversation_ids=db_diary.related_conversation_ids,
+                    category=db_diary.category,
                     emotions=db_diary.emotions,
                     tags=db_diary.tags,
                     created_at=db_diary.created_at,
@@ -146,7 +89,7 @@ async def get_relevant_diaries(
     character_id: str,
     message: str,
     user_id: str = Depends(get_mock_user_id),
-    diary_service: DiaryService = Depends(get_diary_service)
+    diary_service: DiaryCoreService = Depends(get_diary_core_service)
 ):
     """
     获取与当前消息相关的日记
@@ -172,8 +115,7 @@ async def get_relevant_diaries(
 @router.get("/latest", response_model=Optional[DiaryEntry])
 async def get_latest_diary(
     character_id: str,
-    user_id: str = Depends(get_mock_user_id),
-    diary_service: DiaryService = Depends(get_diary_service)
+    user_id: str = Depends(get_mock_user_id)
 ):
     """
     获取最新的日记
@@ -198,8 +140,7 @@ async def get_latest_diary(
                 user_id=db_diary.user_id,
                 date=db_diary.date,
                 content=db_diary.content,
-                trigger_type=DiaryTriggerType(db_diary.trigger_type),
-                related_conversation_ids=db_diary.related_conversation_ids,
+                category=db_diary.category,
                 emotions=db_diary.emotions,
                 tags=db_diary.tags,
                 created_at=db_diary.created_at,
@@ -239,8 +180,7 @@ async def get_diary_by_id(
                 user_id=db_diary.user_id,
                 date=db_diary.date,
                 content=db_diary.content,
-                trigger_type=DiaryTriggerType(db_diary.trigger_type),
-                related_conversation_ids=db_diary.related_conversation_ids,
+                category=db_diary.category,
                 emotions=db_diary.emotions,
                 tags=db_diary.tags,
                 created_at=db_diary.created_at,
@@ -258,8 +198,7 @@ async def get_diary_by_id(
 async def update_diary(
     diary_id: str,
     request: UpdateDiaryRequest,
-    user_id: str = Depends(get_mock_user_id),
-    diary_service: DiaryService = Depends(get_diary_service)
+    user_id: str = Depends(get_mock_user_id)
 ):
     """
     更新日记内容
@@ -292,29 +231,23 @@ async def update_diary(
             db_diary.content = request.content
             db_diary.emotions = request.emotions
             db_diary.tags = request.tags
-
-            from datetime import datetime
             db_diary.updated_at = datetime.now()
 
             db.commit()
             db.refresh(db_diary)
 
-            # 只更新文件（数据库已经更新过了）
             diary_entry = DiaryEntry(
                 id=db_diary.id,
                 character_id=db_diary.character_id,
                 user_id=db_diary.user_id,
                 date=db_diary.date,
                 content=db_diary.content,
-                trigger_type=DiaryTriggerType(db_diary.trigger_type),
-                related_conversation_ids=db_diary.related_conversation_ids,
+                category=db_diary.category,
                 emotions=db_diary.emotions,
                 tags=db_diary.tags,
                 created_at=db_diary.created_at,
                 updated_at=db_diary.updated_at
             )
-
-            diary_service._update_diary_file(diary_entry)
 
             return DiaryResponse(
                 diary=diary_entry,
@@ -331,8 +264,7 @@ async def update_diary(
 @router.delete("/{diary_id}")
 async def delete_diary(
     diary_id: str,
-    user_id: str = Depends(get_mock_user_id),
-    diary_service: DiaryService = Depends(get_diary_service)
+    user_id: str = Depends(get_mock_user_id)
 ):
     """
     删除日记
@@ -360,17 +292,7 @@ async def delete_diary(
             if not db_diary:
                 raise HTTPException(status_code=404, detail="日记不存在")
 
-            # 删除文件
-            file_path = diary_service._get_diary_file_path(
-                db_diary.character_id,
-                db_diary.user_id,
-                db_diary.date
-            )
-
-            if file_path.exists():
-                file_path.unlink()
-
-            # 删除数据库记录
+            # 删除数据库记录（SQLite only, no file system）
             db.delete(db_diary)
             db.commit()
 

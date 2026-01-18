@@ -1,17 +1,17 @@
-"""Tests for DiaryTagGenerator."""
+"""Tests for DiaryTagService."""
 
 import pytest
 from unittest.mock import Mock, patch
 
-from app.services.diary.tag_generator import DiaryTagGenerator
+from app.services.diary.tag_service import DiaryTagService
 
 
-class TestDiaryTagGenerator:
-    """Test DiaryTagGenerator class."""
+class TestDiaryTagService:
+    """Test DiaryTagService class."""
 
     def test_tag_generator_init(self):
         """Test tag generator initialization."""
-        generator = DiaryTagGenerator()
+        generator = DiaryTagService()
         assert generator is not None
 
     def test_generate_tags_with_mock(self):
@@ -20,7 +20,7 @@ class TestDiaryTagGenerator:
         mock_llm = Mock()
         mock_llm.generate_response.return_value = "[[Tag: Python异步编程, FastAPI依赖注入, 装饰器模式]]"
 
-        generator = DiaryTagGenerator()
+        generator = DiaryTagService()
         tags = generator.generate_tags(
             diary_content="今天学习了Python异步编程和FastAPI框架",
             category="knowledge",
@@ -38,7 +38,7 @@ class TestDiaryTagGenerator:
         mock_llm = Mock()
         mock_llm.generate_response.side_effect = Exception("LLM error")
 
-        generator = DiaryTagGenerator()
+        generator = DiaryTagService()
         tags = generator.generate_tags(
             diary_content="学习内容",
             category="knowledge",
@@ -51,7 +51,7 @@ class TestDiaryTagGenerator:
 
     def test_parse_tags_with_valid_format(self):
         """Test parsing tags in valid [[Tag: ...]] format."""
-        generator = DiaryTagGenerator()
+        generator = DiaryTagService()
 
         response = "[[Tag: Python编程, 异步开发, FastAPI框架]]"
         tags = generator._parse_tags(response)
@@ -63,7 +63,7 @@ class TestDiaryTagGenerator:
 
     def test_parse_tags_with_invalid_format_fallback(self):
         """Test parsing tags falls back to line-by-line extraction."""
-        generator = DiaryTagGenerator()
+        generator = DiaryTagService()
 
         response = """Python编程
 异步开发
@@ -74,35 +74,29 @@ FastAPI框架"""
 
     def test_parse_tags_limits_to_five(self):
         """Test that parsing limits to 5 tags."""
-        generator = DiaryTagGenerator()
+        generator = DiaryTagService()
 
         response = "[[Tag: 标签1, 标签2, 标签3, 标签4, 标签5, 标签6, 标签7, 标签8, 标签9, 标签10]]"
         tags = generator._parse_tags(response)
 
         assert len(tags) == 5
 
-    @patch('app.services.diary.tag_generator.LLMBase')
-    def test_build_tag_prompt_knowledge_category(self, mock_llm_base):
-        """Test prompt building for knowledge category."""
-        generator = DiaryTagGenerator()
-        prompt = generator._build_tag_prompt(
-            diary_content="学习了Python装饰器",
-            category="knowledge"
-        )
+    @patch('app.services.diary.tag_service.LLMBase')
+    def test_load_tag_prompt_knowledge_category(self, mock_llm_base):
+        """Test prompt loading for knowledge category."""
+        generator = DiaryTagService()
+        # Test that we can load the prompt template
+        prompt = generator._load_prompt()
 
-        assert "knowledge" in prompt
-        assert "Python装饰器" in prompt
         assert "高密度" in prompt
+        assert "标签生成" in prompt
 
-    @patch('app.services.diary.tag_generator.LLMBase')
-    def test_build_tag_prompt_emotional_category(self, mock_llm_base):
-        """Test prompt building for emotional category."""
-        generator = DiaryTagGenerator()
-        prompt = generator._build_tag_prompt(
-            diary_content="哥哥涨工资了，很开心",
-            category="emotional"
-        )
+    @patch('app.services.diary.tag_service.LLMBase')
+    def test_generate_tags_format(self, mock_llm_base):
+        """Test that tag generation returns properly formatted tags."""
+        generator = DiaryTagService()
+        # Test tag format
+        tags = generator._parse_tags("[[Tag: Python编程, 异步开发, FastAPI框架]]")
 
-        assert "emotional" in prompt
-        assert "涨工资" in prompt
-        assert "情绪触发源" in prompt
+        assert len(tags) == 3
+        assert "Python编程" in tags

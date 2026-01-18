@@ -1,9 +1,9 @@
-"""Tests for DiaryQualityChecker."""
+"""Tests for DiaryQualityService."""
 
 import pytest
 from unittest.mock import Mock, patch, AsyncMock
 
-from app.services.diary.quality_checker import DiaryQualityChecker, QualityResult
+from app.services.diary.quality import DiaryQualityService, QualityResult
 
 
 class TestQualityResult:
@@ -28,17 +28,17 @@ class TestQualityResult:
         assert result.confidence == 0.9
 
 
-class TestDiaryQualityChecker:
-    """Test DiaryQualityChecker class."""
+class TestDiaryQualityService:
+    """Test DiaryQualityService class."""
 
     def test_quality_checker_init(self):
         """Test quality checker initialization."""
-        checker = DiaryQualityChecker()
+        checker = DiaryQualityService()
         assert checker is not None
 
     def test_check_hollowness_good_content(self):
         """Test hollowness check passes for good content."""
-        checker = DiaryQualityChecker()
+        checker = DiaryQualityService()
         result = checker._check_hollowness(
             "今天学习了Python异步编程的原理，理解了协程的工作方式"
         )
@@ -47,7 +47,7 @@ class TestDiaryQualityChecker:
 
     def test_check_hollowness_too_short(self):
         """Test hollowness check fails for too short content."""
-        checker = DiaryQualityChecker()
+        checker = DiaryQualityService()
         result = checker._check_hollowness("好的")
 
         assert result.is_acceptable is False
@@ -55,7 +55,7 @@ class TestDiaryQualityChecker:
 
     def test_check_hollowness_hollow_keywords(self):
         """Test hollowness check fails for hollow keyword content."""
-        checker = DiaryQualityChecker()
+        checker = DiaryQualityService()
         # Create content that's long enough but mostly hollow keywords
         # Use enough hollow keywords to trigger the 30% threshold
         hollow_content = ("好的好的好的嗯嗯知道了知道了收到收到呵呵呵呵哈哈嘻嘻嘻嘻" +
@@ -70,7 +70,7 @@ class TestDiaryQualityChecker:
 
     def test_check_hollowness_no_substantive_content(self):
         """Test hollowness check fails for non-substantive content."""
-        checker = DiaryQualityChecker()
+        checker = DiaryQualityService()
         # Create longer content without substantive patterns
         result = checker._check_hollowness("今天天气确实不错挺好的非常好很不错呀")
 
@@ -79,7 +79,7 @@ class TestDiaryQualityChecker:
 
     def test_check_duplicates_no_duplicates(self):
         """Test duplicate check passes when no duplicates."""
-        checker = DiaryQualityChecker()
+        checker = DiaryQualityService()
         result = checker._check_duplicates(
             "今天学习了Python编程",
             recent_diaries=["昨天学习了Java", "前天学习了C++"]
@@ -89,7 +89,7 @@ class TestDiaryQualityChecker:
 
     def test_check_duplicates_with_duplicates(self):
         """Test duplicate check fails with duplicate content."""
-        checker = DiaryQualityChecker()
+        checker = DiaryQualityService()
         result = checker._check_duplicates(
             "今天学习了Python编程的基础知识",
             recent_diaries=["今天学习了Python编程的基础知识", "昨天学习了Java"]
@@ -100,7 +100,7 @@ class TestDiaryQualityChecker:
 
     def test_calculate_similarity_identical(self):
         """Test similarity calculation for identical texts."""
-        checker = DiaryQualityChecker()
+        checker = DiaryQualityService()
         similarity = checker._calculate_similarity(
             "Python编程",
             "Python编程"
@@ -110,7 +110,7 @@ class TestDiaryQualityChecker:
 
     def test_calculate_similarity_different(self):
         """Test similarity calculation for different texts."""
-        checker = DiaryQualityChecker()
+        checker = DiaryQualityService()
         similarity = checker._calculate_similarity(
             "Python编程",
             "Java编程"
@@ -119,27 +119,27 @@ class TestDiaryQualityChecker:
         assert similarity < 1.0
         assert similarity > 0.0
 
-    def test_check_diary_quality_comprehensive(self):
+    def test_check_quality_comprehensive(self):
         """Test comprehensive quality check."""
-        checker = DiaryQualityChecker()
-        result = checker.check_diary_quality(
+        checker = DiaryQualityService()
+        result = checker.check_quality(
             diary_content="今天学习了Python异步编程，理解了event loop的工作原理",
             recent_diaries=["昨天学习了Java多线程"]
         )
 
         assert result.is_acceptable is True
 
-    def test_check_diary_quality_fails_hollowness(self):
+    def test_check_quality_fails_hollowness(self):
         """Test comprehensive quality check fails on hollowness."""
-        checker = DiaryQualityChecker()
-        result = checker.check_diary_quality(
+        checker = DiaryQualityService()
+        result = checker.check_quality(
             diary_content="好的嗯嗯",
             recent_diaries=[]
         )
 
         assert result.is_acceptable is False
 
-    @patch('app.services.diary.quality_checker.SessionLocal')
+    @patch('app.services.diary.quality.SessionLocal')
     def test_get_recent_diaries(self, mock_session_local):
         """Test getting recent diaries from database."""
         # Setup mock for database session
@@ -159,7 +159,7 @@ class TestDiaryQualityChecker:
         # Setup context manager mock
         mock_session_local.return_value = mock_db
 
-        checker = DiaryQualityChecker()
+        checker = DiaryQualityService()
         import asyncio
 
         async def run_test():
@@ -175,7 +175,7 @@ class TestDiaryQualityChecker:
 
     def test_duplicate_threshold(self):
         """Test that duplicate threshold is correctly applied."""
-        checker = DiaryQualityChecker()
+        checker = DiaryQualityService()
 
         # Similar content should trigger duplicate check (threshold 0.85)
         similar_content = "今天学习了Python编程的基础知识和核心概念"

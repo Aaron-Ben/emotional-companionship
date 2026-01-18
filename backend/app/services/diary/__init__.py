@@ -1,16 +1,21 @@
-"""Diary-related services for emotional companionsship system."""
+"""Diary-related services for emotional companionship system.
 
-from app.services.diary.service import DiaryService
-from app.services.diary.assessment import DiaryAssessmentService
-from app.services.diary.triggers import DiaryTriggerManager
-from app.services.diary.tag_generator import DiaryTagGenerator
-from app.services.diary.quality_checker import DiaryQualityChecker, QualityResult
+Simplified diary system with:
+- Unified core service for diary generation
+- Modular prompt-based system
+- SQLite-only storage (no file system)
+- AI-powered quality checking and tag generation
+"""
+
+from app.services.diary.core_service import DiaryCoreService
+from app.services.diary.assessor import DiaryAssessmentService
+from app.services.diary.tag_service import DiaryTagService
+from app.services.diary.quality import DiaryQualityService, QualityResult
 
 __all__ = [
-    "DiaryService",
+    "DiaryCoreService",
     "DiaryAssessmentService",
-    "DiaryTriggerManager",
-    "DiaryTagGenerator",
-    "DiaryQualityChecker",
+    "DiaryTagService",
+    "DiaryQualityService",
     "QualityResult",
 ]
