@@ -165,16 +165,12 @@ async def chat(
 
         # If AI assessed this conversation as worth recording, extract diary asynchronously
         if response.diary_assessment and response.diary_assessment.should_record:
-            # Build complete conversation messages
-            conversation_messages = []
-
-            # Add conversation history if provided
-            if request.conversation_history:
-                conversation_messages.extend(request.conversation_history)
-
-            # Add current user message and AI response
-            conversation_messages.append({"role": "user", "content": request.message})
-            conversation_messages.append({"role": "assistant", "content": response.message})
+            # Build current conversation ONLY (不包括历史，避免日记内容重复)
+            # 日记应该只记录本次对话的新增内容
+            conversation_messages = [
+                {"role": "user", "content": request.message},
+                {"role": "assistant", "content": response.message}
+            ]
 
             # Trigger async diary extraction (don't wait for it)
             asyncio.create_task(
@@ -293,12 +289,12 @@ async def assess_and_extract_diary_stream(
     评估对话并提取日记（用于流式端点）。
     """
     try:
-        # 构建完整对话
-        conversation_messages = []
-        if conversation_history:
-            conversation_messages.extend(conversation_history)
-        conversation_messages.append({"role": "user", "content": user_message})
-        conversation_messages.append({"role": "assistant", "content": assistant_response})
+        # 构建当前对话 ONLY（不包括历史，避免日记内容重复）
+        # 日记应该只记录本次对话的新增内容
+        conversation_messages = [
+            {"role": "user", "content": user_message},
+            {"role": "assistant", "content": assistant_response}
+        ]
 
         # AI评估
         assessment_service = DiaryAssessmentService()
