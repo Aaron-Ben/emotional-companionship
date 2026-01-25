@@ -159,11 +159,11 @@ async def get_future_events(
                     "title": e.title,
                     "description": e.description,
                     "event_date": e.event_date,
-                    "original_expression": e.original_expression,
-                    "expression_type": str(e.expression_type),
-                    "confidence": e.confidence,
                     "status": e.status,
                     "tags": e.tags,
+                    "source_conversation": e.source_conversation,
+                    "created_at": e.created_at.isoformat() if e.created_at else None,
+                    "updated_at": e.updated_at.isoformat() if e.updated_at else None,
                 }
                 for e in events_list
             ]
@@ -200,9 +200,6 @@ async def get_events_by_date(
                 "title": e.title,
                 "description": e.description,
                 "event_date": e.event_date,
-                "original_expression": e.original_expression,
-                "expression_type": str(e.expression_type),
-                "confidence": e.confidence,
                 "status": e.status,
                 "tags": e.tags,
                 "source_conversation": e.source_conversation,

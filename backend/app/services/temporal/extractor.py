@@ -8,7 +8,6 @@ from datetime import datetime
 from app.services.llms.base import LLMBase
 from app.services.temporal.models import (
     FutureEvent,
-    TimeExpressionType,
     ExtractTimelineRequest,
 )
 from app.services.temporal.normalizer import TimeNormalizer
@@ -217,15 +216,11 @@ class TimeExtractor:
                     continue
 
                 # Normalize to absolute date
-                normalized_date, expr_type, confidence = self.normalizer.normalize(time_expression)
+                normalized_date = self.normalizer.normalize(time_expression)
 
-                # Skip if no valid date and not fuzzy time
-                if not normalized_date and expr_type != TimeExpressionType.FUZZY_TIME:
-                    continue
-
-                # For fuzzy time, we still want to record but with lower confidence
+                # Skip if no valid date
                 if not normalized_date:
-                    confidence = 0.3
+                    continue
 
                 # Create FutureEvent
                 event = FutureEvent(
@@ -233,10 +228,7 @@ class TimeExtractor:
                     user_id=user_id,
                     title=event_data.get("event_title", "未命名事件"),
                     description=event_data.get("event_description", ""),
-                    event_date=normalized_date or "",
-                    original_expression=time_expression,
-                    expression_type=expr_type,
-                    confidence=confidence,
+                    event_date=normalized_date,
                     source_conversation=event_data.get("context", ""),
                     status="pending",
                     created_at=datetime.now()

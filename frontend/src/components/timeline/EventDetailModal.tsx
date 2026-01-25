@@ -4,13 +4,10 @@ import React, { useState } from 'react';
 import type { FutureEvent } from '../../types/timeline';
 import {
   updateEventStatus,
-  deleteEvent,
   getStatusLabel,
   getStatusColor,
-  getExpressionTypeLabel,
   formatDisplayDate,
 } from '../../services/timelineService';
-import './EventDetailModal.css';
 
 interface EventDetailModalProps {
   event: FutureEvent;
@@ -44,59 +41,60 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
     }
   };
 
-  const handleDelete = async () => {
-    if (!event.id) return;
-
-    if (!confirm('确定要删除这个事件吗？')) {
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      await deleteEvent(event.id);
-      onUpdate();
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '删除事件失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   if (!isOpen) {
     return null;
   }
 
   return (
-    <div className="event-detail-modal-overlay" onClick={onClose}>
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1100] animate-in fade-in duration-200"
+      onClick={onClose}
+    >
       <div
-        className="event-detail-modal-content"
+        className="w-[90%] max-w-[450px] max-h-[85vh] bg-white rounded-2xl shadow-2xl flex flex-col animate-in slide-in-from-bottom-4 duration-300"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="event-detail-modal-header">
-          <h3>{event.title}</h3>
-          <button className="event-detail-modal-close" onClick={onClose}>
-            ×
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 bg-gradient-to-r from-sky-400 to-blue-500 rounded-t-2xl">
+          <h3 className="text-lg font-semibold text-white">{event.title}</h3>
+          <button
+            className="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center hover:bg-white/30 transition-all hover:rotate-90 duration-200"
+            onClick={onClose}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         </div>
 
-        <div className="event-detail-modal-body">
+        {/* Body */}
+        <div
+          className="flex-1 overflow-y-auto px-6 py-5"
+          style={{
+            scrollbarWidth: 'thin',
+            scrollbarColor: '#ccc #f0f0f0',
+          }}
+        >
           {error && (
-            <div className="event-detail-error">
-              {error}
-              <button onClick={() => setError(null)} className="error-close">
+            <div className="flex items-center justify-between p-3 mb-4 bg-red-50 border border-red-200 rounded-lg text-red-500 text-sm">
+              <span>{error}</span>
+              <button
+                onClick={() => setError(null)}
+                className="w-5 h-5 flex items-center justify-center text-red-500 hover:bg-red-100 rounded"
+              >
                 ×
               </button>
             </div>
           )}
 
-          <div className="event-detail-section">
-            <label>状态</label>
-            <div className="event-detail-status">
+          {/* 状态 */}
+          <div className="mb-5">
+            <label className="block mb-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+              状态
+            </label>
+            <div className="flex items-center">
               <span
-                className="status-badge"
+                className="px-3.5 py-1.5 text-sm font-medium text-white rounded-full"
                 style={{ backgroundColor: getStatusColor(event.status) }}
               >
                 {getStatusLabel(event.status)}
@@ -104,52 +102,48 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
             </div>
           </div>
 
+          {/* 描述 */}
           {event.description && (
-            <div className="event-detail-section">
-              <label>描述</label>
-              <p>{event.description}</p>
+            <div className="mb-5">
+              <label className="block mb-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                描述
+              </label>
+              <p className="text-sm text-gray-800 leading-relaxed">{event.description}</p>
             </div>
           )}
 
-          <div className="event-detail-section">
-            <label>日期</label>
-            <p>{formatDisplayDate(event.event_date)}</p>
+          {/* 日期 */}
+          <div className="mb-5">
+            <label className="block mb-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+              日期
+            </label>
+            <p className="text-sm text-gray-800">{formatDisplayDate(event.event_date)}</p>
           </div>
 
-          <div className="event-detail-section">
-            <label>原始表达</label>
-            <p className="event-detail-original">"{event.original_expression}"</p>
-          </div>
-
-          <div className="event-detail-section">
-            <label>类型</label>
-            <p>{getExpressionTypeLabel(event.expression_type)}</p>
-          </div>
-
-          <div className="event-detail-section">
-            <label>置信度</label>
-            <div className="event-detail-confidence-bar">
-              <div
-                className="confidence-fill"
-                style={{ width: `${event.confidence * 100}%` }}
-              />
-            </div>
-            <span className="confidence-value">{Math.round(event.confidence * 100)}%</span>
-          </div>
-
+          {/* 来源对话 */}
           {event.source_conversation && (
-            <div className="event-detail-section">
-              <label>来源对话</label>
-              <p className="event-detail-source">{event.source_conversation}</p>
+            <div className="mb-5">
+              <label className="block mb-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                来源对话
+              </label>
+              <p className="text-sm text-gray-600 bg-gray-50 px-3.5 py-2.5 rounded-lg border-l-3 border-sky-400 leading-relaxed">
+                {event.source_conversation}
+              </p>
             </div>
           )}
 
+          {/* 标签 */}
           {event.tags && event.tags.length > 0 && (
-            <div className="event-detail-section">
-              <label>标签</label>
-              <div className="event-detail-tags">
+            <div className="mb-5">
+              <label className="block mb-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+                标签
+              </label>
+              <div className="flex flex-wrap gap-2">
                 {event.tags.map((tag, index) => (
-                  <span key={index} className="tag">
+                  <span
+                    key={index}
+                    className="px-2.5 py-1 text-xs bg-sky-50 text-sky-500 rounded-full border border-sky-200"
+                  >
                     {tag}
                   </span>
                 ))}
@@ -157,9 +151,12 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
             </div>
           )}
 
-          <div className="event-detail-section">
-            <label>创建时间</label>
-            <p>
+          {/* 创建时间 */}
+          <div className="mb-5">
+            <label className="block mb-2 text-xs font-medium text-gray-500 uppercase tracking-wider">
+              创建时间
+            </label>
+            <p className="text-sm text-gray-800">
               {event.created_at
                 ? new Date(event.created_at).toLocaleString('zh-CN')
                 : '未知'}
@@ -167,18 +164,19 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
           </div>
         </div>
 
-        <div className="event-detail-modal-footer">
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-200 flex gap-3 flex-wrap bg-gray-50 rounded-b-2xl">
           {event.status === 'pending' && (
             <>
               <button
-                className="btn btn-complete"
+                className="flex-1 min-w-[100px] px-4 py-2.5 bg-green-500 text-white text-sm font-medium rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 onClick={() => handleStatusChange('completed')}
                 disabled={loading}
               >
                 标记为完成
               </button>
               <button
-                className="btn btn-cancel"
+                className="flex-1 min-w-[100px] px-4 py-2.5 bg-red-500 text-white text-sm font-medium rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 onClick={() => handleStatusChange('cancelled')}
                 disabled={loading}
               >
@@ -186,13 +184,6 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
               </button>
             </>
           )}
-          <button
-            className="btn btn-delete"
-            onClick={handleDelete}
-            disabled={loading}
-          >
-            删除事件
-          </button>
         </div>
       </div>
     </div>

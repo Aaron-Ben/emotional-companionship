@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 from app.models.database import SessionLocal, FutureEventTable
 from app.services.temporal.models import (
     FutureEvent,
-    TimeExpressionType,
     EventStatus,
     GetEventsRequest,
     GetEventsByDateRequest,
@@ -80,7 +79,6 @@ class EventRetriever:
                 if existing:
                     logger.info(f"Similar event already exists, updating: {event.title}")
                     existing.updated_at = datetime.now()
-                    existing.confidence = max(existing.confidence, event.confidence)
                     if event.description and not existing.description:
                         existing.description = event.description
                     saved_event = FutureEvent(
@@ -90,9 +88,6 @@ class EventRetriever:
                         title=existing.title,
                         description=existing.description,
                         event_date=existing.event_date,
-                        original_expression=existing.original_expression,
-                        expression_type=self._parse_enum(existing.expression_type, TimeExpressionType),
-                        confidence=existing.confidence,
                         source_conversation=existing.source_conversation,
                         tags=existing.tags or [],
                         status=self._parse_enum(existing.status, EventStatus),
@@ -111,9 +106,6 @@ class EventRetriever:
                         title=event.title,
                         description=event.description,
                         event_date=event.event_date,
-                        original_expression=event.original_expression,
-                        expression_type=event.expression_type.value,
-                        confidence=event.confidence,
                         source_conversation=event.source_conversation,
                         tags=event.tags,
                         status=event.status.value,
@@ -129,9 +121,6 @@ class EventRetriever:
                         title=event.title,
                         description=event.description,
                         event_date=event.event_date,
-                        original_expression=event.original_expression,
-                        expression_type=event.expression_type,
-                        confidence=event.confidence,
                         source_conversation=event.source_conversation,
                         tags=event.tags,
                         status=event.status,
@@ -196,9 +185,6 @@ class EventRetriever:
                     title=db_event.title,
                     description=db_event.description,
                     event_date=db_event.event_date,
-                    original_expression=db_event.original_expression,
-                    expression_type=self._parse_enum(db_event.expression_type, TimeExpressionType),
-                    confidence=db_event.confidence,
                     source_conversation=db_event.source_conversation,
                     tags=db_event.tags or [],
                     status=self._parse_enum(db_event.status, EventStatus),
@@ -244,9 +230,6 @@ class EventRetriever:
                     title=db_event.title,
                     description=db_event.description,
                     event_date=db_event.event_date,
-                    original_expression=db_event.original_expression,
-                    expression_type=self._parse_enum(db_event.expression_type, TimeExpressionType),
-                    confidence=db_event.confidence,
                     source_conversation=db_event.source_conversation,
                     tags=db_event.tags or [],
                     status=self._parse_enum(db_event.status, EventStatus),
@@ -298,9 +281,6 @@ class EventRetriever:
                 title=db_event.title,
                 description=db_event.description,
                 event_date=db_event.event_date,
-                original_expression=db_event.original_expression,
-                expression_type=self._parse_enum(db_event.expression_type, TimeExpressionType),
-                confidence=db_event.confidence,
                 source_conversation=db_event.source_conversation,
                 tags=db_event.tags or [],
                 status=request.status,

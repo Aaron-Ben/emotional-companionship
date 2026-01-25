@@ -2,8 +2,7 @@
 
 import re
 from datetime import datetime, timedelta
-from typing import Optional, Tuple
-from .models import TimeExpressionType
+from typing import Optional
 
 
 class TimeNormalizer:
@@ -65,7 +64,7 @@ class TimeNormalizer:
         return datetime.now()
 
     @classmethod
-    def normalize(cls, expression: str) -> Tuple[Optional[str], TimeExpressionType, float]:
+    def normalize(cls, expression: str) -> Optional[str]:
         """
         Normalize a Chinese time expression to absolute date.
 
@@ -73,20 +72,17 @@ class TimeNormalizer:
             expression: The time expression to normalize (e.g., "明天下午3点")
 
         Returns:
-            Tuple of (normalized_date, expression_type, confidence)
-            - normalized_date: YYYY-MM-DD format, or None if cannot normalize
-            - expression_type: Type of the expression
-            - confidence: Confidence score (0-1)
+            Normalized date in YYYY-MM-DD format, or None if cannot normalize
         """
         expression = expression.strip()
 
         # Check for fuzzy time expressions (no specific date)
-        for pattern_name, pattern in [
-            ('later', cls.PATTERNS['later']),
-            ('future', cls.PATTERNS['future']),
+        for pattern in [
+            cls.PATTERNS['later'],
+            cls.PATTERNS['future'],
         ]:
             if pattern.search(expression):
-                return None, TimeExpressionType.FUZZY_TIME, 0.6
+                return None
 
         # Check for specific dates with year
         match = cls.PATTERNS['month_day_with_year'].search(expression)
@@ -95,12 +91,8 @@ class TimeNormalizer:
             try:
                 date = datetime(int(year), int(month), int(day))
                 if date < cls.get_today():
-                    return None, TimeExpressionType.SPECIFIC_DATE, 0.3
-                return (
-                    date.strftime('%Y-%m-%d'),
-                    TimeExpressionType.SPECIFIC_DATE,
-                    0.95
-                )
+                    return None
+                return date.strftime('%Y-%m-%d')
             except ValueError:
                 pass
 
@@ -116,11 +108,7 @@ class TimeNormalizer:
                 if date < cls.get_today():
                     date = datetime(today.year + 1, int(month), int(day))
 
-                return (
-                    date.strftime('%Y-%m-%d'),
-                    TimeExpressionType.SPECIFIC_DATE,
-                    0.9
-                )
+                return date.strftime('%Y-%m-%d')
             except ValueError:
                 pass
 
@@ -130,47 +118,27 @@ class TimeNormalizer:
             days = int(match.group(1))
             if days > 0 and days <= 365:
                 date = cls.get_today() + timedelta(days=days)
-                return (
-                    date.strftime('%Y-%m-%d'),
-                    TimeExpressionType.RELATIVE_DAY,
-                    0.85
-                )
+                return date.strftime('%Y-%m-%d')
 
         # Check for "three days later"
         if cls.PATTERNS['three_days_later'].search(expression):
             date = cls.get_today() + timedelta(days=3)
-            return (
-                date.strftime('%Y-%m-%d'),
-                TimeExpressionType.RELATIVE_DAY,
-                0.9
-            )
+            return date.strftime('%Y-%m-%d')
 
         # Check for "day after tomorrow"
         if cls.PATTERNS['day_after_tomorrow'].search(expression):
             date = cls.get_today() + timedelta(days=2)
-            return (
-                date.strftime('%Y-%m-%d'),
-                TimeExpressionType.RELATIVE_DAY,
-                0.95
-            )
+            return date.strftime('%Y-%m-%d')
 
         # Check for "tomorrow"
         if cls.PATTERNS['tomorrow'].search(expression):
             date = cls.get_today() + timedelta(days=1)
-            return (
-                date.strftime('%Y-%m-%d'),
-                TimeExpressionType.RELATIVE_DAY,
-                0.95
-            )
+            return date.strftime('%Y-%m-%d')
 
         # Check for "today"
         if cls.PATTERNS['today'].search(expression):
             date = cls.get_today()
-            return (
-                date.strftime('%Y-%m-%d'),
-                TimeExpressionType.RELATIVE_DAY,
-                0.95
-            )
+            return date.strftime('%Y-%m-%d')
 
         # Check for "n weeks later"
         match = cls.PATTERNS['n_weeks_later'].search(expression)
@@ -178,11 +146,7 @@ class TimeNormalizer:
             weeks = int(match.group(1))
             if weeks > 0 and weeks <= 52:
                 date = cls.get_today() + timedelta(weeks=weeks)
-                return (
-                    date.strftime('%Y-%m-%d'),
-                    TimeExpressionType.RELATIVE_WEEK,
-                    0.8
-                )
+                return date.strftime('%Y-%m-%d')
 
         # Check for "week after next"
         if cls.PATTERNS['week_after_next'].search(expression):
@@ -192,11 +156,7 @@ class TimeNormalizer:
             if days_ahead <= 0:
                 days_ahead += 7
             date = today + timedelta(days=days_ahead + 7)
-            return (
-                date.strftime('%Y-%m-%d'),
-                TimeExpressionType.RELATIVE_WEEK,
-                0.85
-            )
+            return date.strftime('%Y-%m-%d')
 
         # Check for "next week" (next Monday)
         if cls.PATTERNS['next_week'].search(expression):
@@ -205,11 +165,7 @@ class TimeNormalizer:
             if days_ahead <= 0:
                 days_ahead += 7
             date = today + timedelta(days=days_ahead)
-            return (
-                date.strftime('%Y-%m-%d'),
-                TimeExpressionType.RELATIVE_WEEK,
-                0.85
-            )
+            return date.strftime('%Y-%m-%d')
 
         # Check for "next month"
         if cls.PATTERNS['next_month'].search(expression):
@@ -218,24 +174,16 @@ class TimeNormalizer:
                 date = datetime(today.year + 1, 1, 1)
             else:
                 date = datetime(today.year, today.month + 1, 1)
-            return (
-                date.strftime('%Y-%m-%d'),
-                TimeExpressionType.RELATIVE_MONTH,
-                0.8
-            )
+            return date.strftime('%Y-%m-%d')
 
         # Check for "next year"
         if cls.PATTERNS['next_year'].search(expression):
             today = cls.get_today()
             date = datetime(today.year + 1, 1, 1)
-            return (
-                date.strftime('%Y-%m-%d'),
-                TimeExpressionType.RELATIVE_MONTH,
-                0.8
-            )
+            return date.strftime('%Y-%m-%d')
 
         # Cannot normalize
-        return None, TimeExpressionType.FUZZY_TIME, 0.0
+        return None
 
     @classmethod
     def format_display_date(cls, date_str: str) -> str:

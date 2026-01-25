@@ -6,28 +6,11 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-class TimeExpressionType(str, Enum):
-    """Type of time expression."""
-    RELATIVE_DAY = "relative_day"      # 明天, 后天, 3天后
-    RELATIVE_WEEK = "relative_week"    # 下周, 下下周
-    RELATIVE_MONTH = "relative_month"  # 下个月, 明年
-    SPECIFIC_DATE = "specific_date"    # 1月25日, 2月14日
-    FUZZY_TIME = "fuzzy_time"          # 一会, 改天, 以后
-
-
 class EventStatus(str, Enum):
     """Status of a future event."""
     PENDING = "pending"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
-
-
-class TimeExpression(BaseModel):
-    """Represents a time expression found in conversation."""
-    expression: str = Field(..., description="原始时间表达，如 '明天下午3点'")
-    normalized_date: str = Field(..., description="标准化日期 YYYY-MM-DD")
-    expression_type: TimeExpressionType = Field(..., description="时间表达类型")
-    confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="置信度")
 
 
 class FutureEvent(BaseModel):
@@ -38,9 +21,6 @@ class FutureEvent(BaseModel):
     title: str = Field(..., description="事件标题")
     description: Optional[str] = Field(None, description="事件详细描述")
     event_date: str = Field(..., description="事件日期 YYYY-MM-DD")
-    original_expression: str = Field(..., description="原始时间表达")
-    expression_type: TimeExpressionType = Field(..., description="时间表达类型")
-    confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="置信度")
     source_conversation: Optional[str] = Field(None, description="来源对话内容")
     tags: List[str] = Field(default_factory=list, description="事件标签")
     status: EventStatus = Field(default=EventStatus.PENDING, description="事件状态")

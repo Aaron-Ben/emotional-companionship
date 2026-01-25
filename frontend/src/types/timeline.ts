@@ -1,12 +1,5 @@
 /** Timeline type definitions */
 
-export type TimeExpressionType =
-  | 'relative_day'      // 明天, 后天, 3天后
-  | 'relative_week'     // 下周, 下下周
-  | 'relative_month'    // 下个月, 明年
-  | 'specific_date'     // 1月25日, 2月14日
-  | 'fuzzy_time';       // 一会, 改天, 以后
-
 export type EventStatus = 'pending' | 'completed' | 'cancelled';
 
 export interface FutureEvent {
@@ -16,9 +9,6 @@ export interface FutureEvent {
   title: string;
   description?: string;
   event_date: string;           // YYYY-MM-DD
-  original_expression: string;  // 原始时间表达
-  expression_type: TimeExpressionType;
-  confidence: number;           // 0-1
   source_conversation?: string;
   tags: string[];
   status: EventStatus;

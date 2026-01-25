@@ -1,6 +1,6 @@
 /** Timeline API service */
 
-import { API_ENDPOINTS, apiRequest } from './api';
+import { apiRequest } from './api';
 import type {
   FutureEvent,
   TimelineDay,
@@ -174,25 +174,11 @@ export function getStatusLabel(status: EventStatus): string {
  */
 export function getStatusColor(status: EventStatus): string {
   const colors: Record<EventStatus, string> = {
-    pending: '#FFA500',
-    completed: '#4CAF50',
-    cancelled: '#999999',
+    pending: '#60a5fa',    // 蓝色
+    completed: '#4CAF50',  // 绿色
+    cancelled: '#EF4444',  // 红色
   };
   return colors[status] || '#999999';
-}
-
-/**
- * Get expression type label for display
- */
-export function getExpressionTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    relative_day: '相对日期',
-    relative_week: '相对周',
-    relative_month: '相对月',
-    specific_date: '具体日期',
-    fuzzy_time: '模糊时间',
-  };
-  return labels[type] || type;
 }
 
 export default {
@@ -206,5 +192,4 @@ export default {
   formatDisplayDate,
   getStatusLabel,
   getStatusColor,
-  getExpressionTypeLabel,
 };

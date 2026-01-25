@@ -1,7 +1,7 @@
 """Database configuration and models for emotional companionship system."""
 
 import os
-from sqlalchemy import create_engine, Column, String, DateTime, Text, JSON, Float
+from sqlalchemy import create_engine, Column, String, DateTime, Text, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -43,9 +43,6 @@ class FutureEventTable(Base):
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     event_date = Column(String, index=True, nullable=False)
-    original_expression = Column(String, nullable=False)
-    expression_type = Column(String, nullable=False)
-    confidence = Column(Float, nullable=False, default=0.8)
     source_conversation = Column(Text, nullable=True)
     tags = Column(JSON, default=list)
     status = Column(String, nullable=False, default="pending")
