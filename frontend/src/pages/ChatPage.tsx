@@ -2,22 +2,15 @@
 
 import React, { useState } from 'react';
 import { RPGChatPanel } from '../components/conversation';
-import { CharacterInfoModal } from '../components/character';
 import { ChatHistory } from '../components/history';
 import { FloatingActionButton } from '../components/ui';
 import { DiaryListModal, DiaryDetailModal, DiaryEditModal } from '../components/diary';
 import { FutureTimelineModal } from '../components/timeline';
 import { useChat } from '../hooks/useChat';
-import { useCharacter } from '../hooks/useCharacter';
 import backgroundImage from '/background/image.png';
 import type { DiaryEntry } from '../services/diaryService';
 
-interface ChatPageProps {
-  onBack: () => void;
-}
-
-export const ChatPage: React.FC<ChatPageProps> = ({ onBack }) => {
-  const [showInfo, setShowInfo] = useState(false);
+export const ChatPage: React.FC = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [showDiaries, setShowDiaries] = useState(false);
   const [showDiaryDetail, setShowDiaryDetail] = useState(false);
@@ -34,8 +27,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onBack }) => {
     clearHistory,
     messages,
   } = useChat('sister_001');
-
-  const { character } = useCharacter('sister_001');
 
   const handleSend = () => {
     if (userInput.trim()) {
@@ -80,19 +71,6 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onBack }) => {
         }}
       />
 
-      {/* Header */}
-      <div className="bg-white/90 backdrop-blur-sm border-b-2 border-pink-200 px-4 py-3 flex items-center gap-3 shadow-sm flex-shrink-0">
-        <button
-          onClick={onBack}
-          className="text-pink-500 hover:text-pink-600 transition-colors p-1 font-medium"
-        >
-          ← 返回
-        </button>
-        <div className="flex-1">
-          <h2 className="font-semibold text-gray-800">{character?.name || '妹妹'}</h2>
-        </div>
-      </div>
-
       {/* Empty space for future content */}
       <div className="flex-1 overflow-y-auto">
         {/* Content can be added here if needed */}
@@ -132,20 +110,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onBack }) => {
         position="bottom-right"
         index={2}
       />
-      <FloatingActionButton
-        onClick={() => setShowInfo(true)}
-        icon="⭐"
-        ariaLabel="角色信息"
-        position="bottom-right"
-        index={3}
-      />
 
       {/* Modals */}
-      <CharacterInfoModal
-        isOpen={showInfo}
-        onClose={() => setShowInfo(false)}
-        character={character}
-      />
       <ChatHistory
         isOpen={showHistory}
         onClose={() => setShowHistory(false)}
