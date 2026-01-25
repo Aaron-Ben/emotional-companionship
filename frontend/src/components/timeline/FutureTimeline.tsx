@@ -1,6 +1,6 @@
 /** Future Timeline Component - Each event is a node, same-day events are vertically connected */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { FutureEvent } from '../../types/timeline';
 import { getFutureEvents } from '../../services/timelineService';
 
@@ -42,12 +42,26 @@ export const FutureTimeline: React.FC<FutureTimelineProps> = ({
 
   const [nodes, setNodes] = useState<TimelineNode[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+  const [allEventNodes, setAllEventNodes] = useState<TimelineNode[]>([]);
+
+  // 切换日期展开/收起状态
+  const toggleDateExpansion = (date: string) => {
+    setExpandedDates(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(date)) {
+        newSet.delete(date);
+      } else {
+        newSet.add(date);
+      }
+      return newSet;
+    });
+  };
 
   // 计算节点位置（S型布局，同一天的事件垂直排列）
-  const calculatePositions = (nodeList: TimelineNode[]) => {
+  const calculatePositions = (nodeList: TimelineNode[], expanded: Set<string>) => {
     const datesPerRow = 5; // 每行5个日期
     const dateSpacing = 120; // 日期间距（像素）
-    const rowSpacing = 150; // 行间距（像素）
     const eventVerticalSpacing = 45; // 同一天事件之间的垂直间距
 
     // 按日期分组
@@ -62,7 +76,45 @@ export const FutureTimeline: React.FC<FutureTimelineProps> = ({
     // 获取排序后的日期列表
     const sortedDates = Array.from(nodesByDate.keys()).sort();
 
-    return nodeList.map(node => {
+    // 过滤可见节点：如果日期已展开显示所有事件，否则只显示前3个
+    const visibleNodes = nodeList.filter(node => {
+      if (expanded.has(node.date)) return true;
+      const sameDateNodes = nodesByDate.get(node.date)!;
+      const eventIndex = sameDateNodes.findIndex(n => n.event.id === node.event.id);
+      return eventIndex < 3;
+    });
+
+    // 按行分组日期，并计算每行的实际高度
+    const rows: { dateIndex: number; date: string; maxEvents: number }[][] = [];
+    const rowCount = Math.ceil(sortedDates.length / datesPerRow);
+
+    for (let row = 0; row < rowCount; row++) {
+      const rowDates: { dateIndex: number; date: string; maxEvents: number }[] = [];
+      const startIndex = row * datesPerRow;
+      const endIndex = Math.min(startIndex + datesPerRow, sortedDates.length);
+
+      for (let i = startIndex; i < endIndex; i++) {
+        const date = sortedDates[i];
+        const dateNodes = nodesByDate.get(date)!;
+        // 计算该日期的可见事件数量
+        const visibleCount = expanded.has(date)
+          ? dateNodes.length
+          : Math.min(dateNodes.length, 3);
+        rowDates.push({ dateIndex: i, date, maxEvents: visibleCount });
+      }
+      rows.push(rowDates);
+    }
+
+    // 计算每行的起始Y位置（基于前几行的实际高度）
+    const rowStartY: number[] = [60]; // 第一行从60开始
+    for (let i = 1; i < rows.length; i++) {
+      // 前一行的最大高度 = (最大事件数 - 1) * 事件间距 + 基础高度
+      const prevRowMaxEvents = Math.max(...rows[i - 1].map(d => d.maxEvents));
+      const prevRowHeight = (prevRowMaxEvents - 1) * eventVerticalSpacing + 100; // 100是基础高度（日期标签+节点）
+      rowStartY.push(rowStartY[i - 1] + prevRowHeight);
+    }
+
+    return visibleNodes.map(node => {
       // 找到该日期在所有日期中的索引
       const dateIndex = sortedDates.indexOf(node.date);
       const row = Math.floor(dateIndex / datesPerRow);
@@ -79,7 +131,7 @@ export const FutureTimeline: React.FC<FutureTimelineProps> = ({
       return {
         ...node,
         x: actualCol * dateSpacing + 60,
-        y: row * rowSpacing + 60 + yOffset,
+        y: rowStartY[row] + yOffset,
         row,
         col: actualCol,
         dateIndex: eventIndex,
@@ -97,11 +149,7 @@ export const FutureTimeline: React.FC<FutureTimelineProps> = ({
     return `${month}月${day}日 ${weekday}`;
   };
 
-  useEffect(() => {
-    loadTimeline();
-  }, [characterId, daysAhead]);
-
-  const loadTimeline = async () => {
+  const loadTimeline = useCallback(async () => {
     try {
       const response = await getFutureEvents({
         character_id: characterId,
@@ -144,17 +192,32 @@ export const FutureTimeline: React.FC<FutureTimelineProps> = ({
         return a.dateIndex - b.dateIndex;
       });
 
-      // 更新索引并计算位置
+      // 更新索引
       const indexedNodes = eventNodes.map((node, idx) => ({
         ...node,
         index: idx,
       }));
 
-      setNodes(calculatePositions(indexedNodes));
+      // 存储所有事件节点（初始状态：所有日期都是收起的）
+      setAllEventNodes(indexedNodes);
+
+      // 计算可见节点位置（初始不展开任何日期）
+      setNodes(calculatePositions(indexedNodes, new Set()));
     } catch (err) {
       console.error('Failed to load timeline:', err);
     }
-  };
+  }, [characterId, userId, daysAhead]);
+
+  useEffect(() => {
+    loadTimeline();
+  }, [loadTimeline]);
+
+  // 当展开状态变化时重新计算节点位置
+  useEffect(() => {
+    if (allEventNodes.length > 0) {
+      setNodes(calculatePositions(allEventNodes, expandedDates));
+    }
+  }, [expandedDates, allEventNodes]);
 
   // 生成连接线路径（包含同一天事件的垂直连接）
   const generatePaths = (): { mainPath: string; verticalLines: string[] } => {
@@ -178,28 +241,65 @@ export const FutureTimeline: React.FC<FutureTimelineProps> = ({
       return dateNodes.sort((a, b) => a.dateIndex - b.dateIndex)[0];
     });
 
-    // 排序第一个节点
+    // 按日期排序
     firstNodeByDate.sort((a, b) => a.date.localeCompare(b.date));
 
     const rowCount = Math.ceil(firstNodeByDate.length / datesPerRow);
 
+    // 按行存储节点，用于生成弯曲连接
+    const rows: TimelineNode[][] = [];
     for (let row = 0; row < rowCount; row++) {
-      const rowFirstNodes = firstNodeByDate.filter((n) => Math.floor(nodes.indexOf(n) / datesPerRow) === row);
+      const startIndex = row * datesPerRow;
+      const endIndex = startIndex + datesPerRow;
+      const rowFirstNodes = firstNodeByDate.slice(startIndex, endIndex);
+
       if (rowFirstNodes.length === 0) continue;
 
+      // S型布局：偶数行从左到右，奇数行从右到左
       const sortedNodes = row % 2 === 0
         ? rowFirstNodes.sort((a, b) => a.col - b.col)
         : rowFirstNodes.sort((a, b) => b.col - a.col);
 
-      const firstNode = sortedNodes[0];
-      const lastNode = sortedNodes[sortedNodes.length - 1];
+      rows.push(sortedNodes);
+    }
 
-      if (row === 0) {
-        pathParts.push(`M ${firstNode.x} ${firstNode.y}`);
-        pathParts.push(`L ${lastNode.x} ${lastNode.y}`);
+    // 生成路径：行内直线，行间弯曲连接
+    for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+      const rowNodes = rows[rowIdx];
+
+      if (rowIdx === 0) {
+        // 第一行：从第一个节点开始
+        pathParts.push(`M ${rowNodes[0].x} ${rowNodes[0].y}`);
       } else {
-        pathParts.push(`L ${firstNode.x} ${firstNode.y}`);
-        pathParts.push(`L ${lastNode.x} ${lastNode.y}`);
+        // 上一行的最后一个节点到当前行的第一个节点：使用弯曲连接
+        const prevRow = rows[rowIdx - 1];
+        const prevLastNode = prevRow[prevRow.length - 1];
+        const currFirstNode = rowNodes[0];
+
+        // 检查是否需要换行（不是同一天的垂直连接）
+        if (prevLastNode.date !== currFirstNode.date) {
+          // 使用贝塞尔曲线创建平滑的S型弯曲
+          // 在两个节点之间添加半圆形弯曲
+          const curvature = 40; // 弯曲程度
+
+          // 偶数行到奇数行（从左到右 -> 从右到左）：向右弯曲
+          // 奇数行到偶数行（从右到左 -> 从左到右）：向左弯曲
+          const direction = rowIdx % 2 === 0 ? 1 : -1; // 当前是偶数行说明上一行是奇数行
+
+          pathParts.push(
+            `C ${prevLastNode.x + curvature * direction} ${prevLastNode.y}, ` +
+            `${currFirstNode.x + curvature * direction} ${currFirstNode.y}, ` +
+            `${currFirstNode.x} ${currFirstNode.y}`
+          );
+        } else {
+          // 同一天的事件，直线连接
+          pathParts.push(`L ${currFirstNode.x} ${currFirstNode.y}`);
+        }
+      }
+
+      // 连接行内的所有节点
+      for (let i = 1; i < rowNodes.length; i++) {
+        pathParts.push(`L ${rowNodes[i].x} ${rowNodes[i].y}`);
       }
     }
 
@@ -248,17 +348,20 @@ export const FutureTimeline: React.FC<FutureTimelineProps> = ({
   const totalDates = new Set(nodes.map(n => n.date)).size;
   const rowCount = Math.ceil(totalDates / datesPerRow);
   const svgWidth = (datesPerRow - 1) * 120 + 120;
-  const svgHeight = rowCount * 150 + 100;
+  // 动态计算高度：基于可见节点的最大Y坐标
+  const maxY = nodes.length > 0 ? Math.max(...nodes.map(n => n.y)) : 0;
+  const svgHeight = Math.max(maxY + 100, rowCount * 150 + 100);
 
   const { mainPath, verticalLines } = generatePaths();
 
   return (
-    <div className="w-full overflow-x-auto">
+    <div className="w-full overflow-x-auto overflow-y-visible">
       <svg
         width={svgWidth}
         height={svgHeight}
-        className="mx-auto"
+        className="mx-auto transition-all duration-300 ease-in-out"
         viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+        style={{ minHeight: svgHeight }}
       >
         {/* 主S型曲线 */}
         <path
@@ -290,19 +393,36 @@ export const FutureTimeline: React.FC<FutureTimelineProps> = ({
           const eventId = node.event.id ?? node.event.title;
           const isSelected = selectedEventId === eventId;
           const showDateLabel = node.isFirstInDate;
+          const isExpanded = expandedDates.has(node.date);
 
           return (
             <g key={eventId}>
               {/* 日期标签（只在该日期的第一个节点显示） */}
               {showDateLabel && (
-                <text
-                  x={node.x}
-                  y={node.y - 18}
-                  textAnchor="middle"
-                  className="text-[10px] fill-blue-600 font-semibold"
-                >
-                  {node.displayDate.split(' ')[0]}
-                </text>
+                <g onClick={() => toggleDateExpansion(node.date)} className="cursor-pointer" style={{ cursor: 'pointer' }}>
+                  {/* 展开状态背景 */}
+                  {isExpanded && (
+                    <rect
+                      x={node.x - 30}
+                      y={node.y - 30}
+                      width="60"
+                      height="20"
+                      rx="4"
+                      fill="#dbeafe"
+                      stroke="#3b82f6"
+                      strokeWidth="1"
+                    />
+                  )}
+                  <text
+                    x={node.x}
+                    y={node.y - 18}
+                    textAnchor="middle"
+                    className="text-[10px]"
+                    style={{ fill: isExpanded ? '#1d4ed8' : '#2563eb', fontWeight: isExpanded ? 700 : 600, cursor: 'pointer' }}
+                  >
+                    {node.displayDate.split(' ')[0]}
+                  </text>
+                </g>
               )}
 
               {/* 节点圆点 */}
@@ -354,6 +474,20 @@ export const FutureTimeline: React.FC<FutureTimelineProps> = ({
                       : node.event.description}
                   </text>
                 </g>
+              )}
+
+              {/* 如果有隐藏事件，显示"+N个更多"提示 */}
+              {node.isLastInDate && !isExpanded && node.eventsInSameDate > 3 && (
+                <text
+                  x={node.x}
+                  y={node.y + 25}
+                  textAnchor="middle"
+                  className="text-[9px]"
+                  style={{ fill: '#3b82f6', cursor: 'pointer' }}
+                  onClick={() => toggleDateExpansion(node.date)}
+                >
+                  +{node.eventsInSameDate - 3}个更多
+                </text>
               )}
             </g>
           );

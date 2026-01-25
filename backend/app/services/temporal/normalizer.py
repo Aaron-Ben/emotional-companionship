@@ -2,7 +2,7 @@
 
 import re
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Tuple
 
 
 class TimeNormalizer:
@@ -15,6 +15,7 @@ class TimeNormalizer:
     - 下个月
     - 3天后, 一周后
     - 1月25日, 2月14日
+    - 下午3点, 15:30, 晚上8点半
     """
 
     # Today's date (can be overridden for testing)
@@ -48,8 +49,14 @@ class TimeNormalizer:
         'month_day_with_year': re.compile(r'(\d{4})年(\d{1,2})月(\d{1,2})日?'),
     }
 
-    # Weekday names in Chinese
+    # Weekday names in Chinese and mapping to weekday numbers (Mon=0, Sun=6)
     WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+    WEEKDAY_MAP = {
+        '一': 0, '二': 1, '三': 2, '四': 3, '五': 4, '六': 5, '日': 6,
+        '一': 0, '二': 1, '三': 2, '四': 3, '五': 4, '六': 5, '日': 6,
+        '周一': 0, '周二': 1, '周三': 2, '周四': 3, '周五': 4, '周六': 5, '周日': 6,
+        '星期一': 0, '星期二': 1, '星期三': 2, '星期四': 3, '星期五': 4, '星期六': 5, '星期日': 6,
+    }
 
     @classmethod
     def set_today(cls, date: datetime):
@@ -157,6 +164,58 @@ class TimeNormalizer:
                 days_ahead += 7
             date = today + timedelta(days=days_ahead + 7)
             return date.strftime('%Y-%m-%d')
+
+        # Check for "下[周星期]X" (next Monday/Tuesday/etc) - means the NEXT occurrence of that weekday
+        next_weekday_pattern = re.compile(r'下[周星期]([一二三四五六七天日日])')
+        match = next_weekday_pattern.search(expression)
+        if match:
+            weekday_char = match.group(1)
+            target_weekday = cls.WEEKDAY_MAP.get(weekday_char)
+            if target_weekday is not None:
+                today = cls.get_today()
+                current_weekday = today.weekday()
+                # Calculate days to the target weekday (next occurrence)
+                days_ahead = (target_weekday - current_weekday + 7) % 7
+                # If it's today, user means next week (otherwise they'd say "今天")
+                if days_ahead == 0:
+                    days_ahead = 7
+                date = today + timedelta(days=days_ahead)
+                return date.strftime('%Y-%m-%d')
+
+        # Check for "这[周星期]X"/"本[周星期]X" (this/current Monday/Tuesday/etc)
+        # Usually means the X in current week, but if passed, refers to next week's X
+        this_weekday_pattern = re.compile(r'[这本][周星期]([一二三四五六七天日日])')
+        match = this_weekday_pattern.search(expression)
+        if match:
+            weekday_char = match.group(1)
+            target_weekday = cls.WEEKDAY_MAP.get(weekday_char)
+            if target_weekday is not None:
+                today = cls.get_today()
+                current_weekday = today.weekday()
+                # Calculate days to target weekday
+                days_ahead = (target_weekday - current_weekday + 7) % 7
+                # If today is the target weekday, user means next week's (otherwise they'd say "今天")
+                if days_ahead == 0:
+                    days_ahead = 7
+                date = today + timedelta(days=days_ahead)
+                return date.strftime('%Y-%m-%d')
+
+        # Check for standalone "[周星期]X" (Monday/Tuesday/etc) - defaults to next occurrence
+        standalone_weekday_pattern = re.compile(r'(?<![上下本这本])[周星期]([一二三四五六七天日日])')
+        match = standalone_weekday_pattern.search(expression)
+        if match:
+            weekday_char = match.group(1)
+            target_weekday = cls.WEEKDAY_MAP.get(weekday_char)
+            if target_weekday is not None:
+                today = cls.get_today()
+                current_weekday = today.weekday()
+                # Calculate days to the target weekday
+                days_ahead = (target_weekday - current_weekday + 7) % 7
+                # If it's today, assume next week (user would say "今天" otherwise)
+                if days_ahead == 0:
+                    days_ahead = 7
+                date = today + timedelta(days=days_ahead)
+                return date.strftime('%Y-%m-%d')
 
         # Check for "next week" (next Monday)
         if cls.PATTERNS['next_week'].search(expression):
