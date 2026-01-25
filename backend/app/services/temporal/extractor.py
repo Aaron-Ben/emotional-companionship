@@ -11,47 +11,10 @@ from app.services.temporal.models import (
     ExtractTimelineRequest,
 )
 from app.services.temporal.normalizer import TimeNormalizer
+from app.services.temporal.prompt import get_time_extraction_prompt
 
 
 logger = logging.getLogger(__name__)
-
-
-# LLM prompt for extracting time expressions
-TIME_EXTRACTION_PROMPT = """你是一个专业的时间信息提取助手。你的任务是从对话中识别所有未来时间相关的信息。
-
-请仔细分析以下对话，提取所有涉及未来时间的信息，包括：
-1. 相对时间表达（明天、后天、下周、下个月等）
-2. 具体日期（1月25日、2月14日等）
-3. 模糊时间表达（一会、改天、以后等）
-
-对于每个时间表达，请提取：
-- time_expression: 原始时间表达（如"明天下午3点"）
-- event_title: 相关事件标题（简短描述，如"开会"）
-- event_description: 事件的详细描述（如果对话中有提供）
-- context: 包含该时间表达的完整句子或上下文
-
-如果对话中没有提到任何未来时间信息，请返回空列表。
-
-请以JSON格式返回，格式如下：
-```json
-{
-  "has_future_events": true/false,
-  "events": [
-    {
-      "time_expression": "明天下午3点",
-      "event_title": "开会",
-      "event_description": "明天下午3点有个重要会议",
-      "context": "用户说：明天下午3点开会，记得提醒我"
-    }
-  ]
-}
-```
-
-注意：
-1. 只提取未来的时间，已经过去的不要提取
-2. event_title要简短明了，2-8个字
-3. event_description可以包含更多细节
-4. 如果时间表达不明确（如"一会"、"改天"），仍然提取但置信度会较低"""
 
 
 class TimeExtractor:
@@ -152,7 +115,7 @@ class TimeExtractor:
         """
         try:
             messages = [
-                {"role": "system", "content": TIME_EXTRACTION_PROMPT},
+                {"role": "system", "content": get_time_extraction_prompt()},
                 {"role": "user", "content": f"请分析以下对话中的时间信息：\n\n{conversation_text}"}
             ]
 

@@ -48,6 +48,28 @@
 - 支持多轮对话历史记录
 - 情绪检测与状态管理
 
+### 📅 未来时间线（NEW!）
+- **自动时间提取**：从对话中智能识别未来时间表达
+  - 相对时间：明天、后天、下周、下周三等
+  - 具体时间：下午3点、15:30、晚上8点半等
+  - 具体日期：1月25日、2月14日等
+
+- **时间精度**：
+  - 支持精确到分钟的时间记录（YYYY-MM-DD HH:MM）
+  - 自动识别时段关键词（上午9点、下午3点、晚上8点）
+  - 仅日期事件不包含具体时间（YYYY-MM-DD）
+
+- **可视化展示**：
+  - S型曲线时间线布局
+  - 同一天事件垂直排列
+  - 可展开/收起每日事件（默认显示3个）
+  - 动态调整行高避免遮挡
+
+- **事件管理**：
+  - 标记事件状态（未完成/已完成/已删除）
+  - 查看事件详情和来源对话
+  - 按日期分组浏览未来安排
+
 ### 📔 智能日记
 - **自动触发机制**：系统会在以下情况自动记录日记
   - **重要事件**：检测到关键词（涨工资、升职、搬家等）或高强度情绪
@@ -97,6 +119,7 @@ emotional-companionship/
 │   │   │       ├── chat.py    # 对话接口
 │   │   │       ├── character.py  # 角色管理
 │   │   │       ├── diary.py   # 日记接口
+│   │   │       ├── temporal.py  # 时间线接口
 │   │   │       └── character_extensions.py  # 扩展功能接口
 │   │   ├── models/            # 数据模型
 │   │   │   ├── character.py   # 角色模型
@@ -112,7 +135,13 @@ emotional-companionship/
 │   │   │   │   ├── emotional_authenticity_service.py  # 情感系统
 │   │   │   │   ├── practical_features_service.py  # 实用功能
 │   │   │   │   └── archetype_service.py  # 角色模板
-│   │   │   └── diary/         # 日记服务
+│   │   │   ├── diary/         # 日记服务
+│   │   │   └── temporal/      # 时间线服务
+│   │   │       ├── models.py  # 时间线数据模型
+│   │   │       ├── extractor.py  # 时间提取服务
+│   │   │       ├── normalizer.py  # 时间归一化
+│   │   │       ├── retriever.py  # 事件存储和检索
+│   │   │       └── prompt.py   # 时间线提示词
 │   │   ├── resources/         # 资源文件
 │   │   │   ├── characters/    # 角色配置
 │   │   │   │   ├── sister.yaml  # 基础角色
@@ -246,6 +275,13 @@ npm run dev
 - `GET /api/v1/diary/latest` - 获取最新日记
 - `POST /api/v1/diary/generate` - 手动生成日记
 - `GET /api/v1/diary/relevant` - 获取相关日记
+
+#### 时间线（NEW!）
+- `POST /api/v1/temporal/extract` - 从对话中提取未来事件
+- `GET /api/v1/temporal/events` - 获取未来事件列表
+- `GET /api/v1/temporal/events/{date}` - 获取指定日期的事件
+- `PUT /api/v1/temporal/events/{id}/status` - 更新事件状态
+- `DELETE /api/v1/temporal/events/{id}` - 删除事件
 
 ## 扩展功能使用指南
 

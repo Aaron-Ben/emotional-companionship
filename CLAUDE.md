@@ -72,11 +72,12 @@ VITE_API_URL=http://localhost:8000
 
 ### Backend Structure
 
-- **`app/api/v1/`** - API endpoints (chat, character, diary)
+- **`app/api/v1/`** - API endpoints (chat, character, diary, temporal)
 - **`app/models/`** - SQLAlchemy ORM models
 - **`app/services/`** - Business logic layer
   - **`services/llms/`** - LLM provider integrations (Qwen, DeepSeek)
   - **`services/diary/`** - Simplified diary system with AI assessment
+  - **`services/temporal/`** - Future timeline system
 - **`app/schemas/`** - Pydantic request/response schemas
 - **`app/main.py`** - FastAPI application entry point
 
@@ -94,9 +95,10 @@ VITE_API_URL=http://localhost:8000
 
 ### Key Data Flow
 
-1. **Chat Flow**: Frontend sends message → `chat_service.py` → LLM API → streaming response with AI assessment → async diary extraction if worth recording → response to frontend
+1. **Chat Flow**: Frontend sends message → `chat_service.py` → LLM API → streaming response with AI assessment → async diary extraction if worth recording → temporal event extraction → response to frontend
 2. **Diary Generation**: AI evaluates conversation worthiness during chat → if worth recording → `diary/core_service.py` extracts from actual conversation → quality check → SQLite storage
 3. **Character System**: YAML files in `backend/app/resources/characters/` loaded at startup → `character_service.py` serves character data
+4. **Temporal Timeline**: Chat mentions future time → `temporal/extractor.py` extracts time expressions → `temporal/normalizer.py` normalizes to absolute datetime → SQLite storage via `temporal/retriever.py`
 
 ### Diary System Architecture
 
@@ -131,6 +133,55 @@ Chat → AI评估值得记录？ → 提取日记（含Tag） → 质量检查 �
 【我的感受】
 
 Tag: 关键词1, 关键词2
+```
+
+### Temporal Timeline System
+
+**Future timeline with time precision support:**
+
+Located in `app/services/temporal/`:
+- **`models.py`** - Data models (FutureEvent, EventStatus, etc.)
+- **`extractor.py`** - LLM-based time expression extraction from conversations
+- **`normalizer.py`** - Chinese time expression normalization to absolute datetime
+  - Supports: "明天下午3点" → "2025-01-26 15:00"
+  - Supports: "后天9点" → "2025-01-27 09:00"
+  - Supports: "15:30" → "2025-01-25 15:30" (today)
+  - Time-of-day defaults: 上午9点, 下午3点, 晚上8点
+- **`retriever.py`** - Event CRUD operations with database
+- **`prompt.py`** - Prompt templates for timeline operations
+
+**Flow:**
+```
+Chat → 提取时间表达 → 归一化为绝对时间 → 存储SQLite → 可视化展示
+              ↓
+        LLM识别未来事件
+```
+
+**Time Format:**
+- With time: `YYYY-MM-DD HH:MM` (e.g., "2025-01-26 15:30")
+- Date only: `YYYY-MM-DD` (e.g., "2025-01-26")
+
+**Frontend Components:**
+- `FutureTimeline.tsx` - S-curve timeline visualization
+  - Expandable/collapsible daily events (default: 3 visible)
+  - Dynamic row height calculation
+  - Click events to view details
+
+**Database Table (`future_events`):**
+```sql
+CREATE TABLE future_events (
+    id VARCHAR PRIMARY KEY,
+    character_id VARCHAR NOT NULL,
+    user_id VARCHAR NOT NULL,
+    title VARCHAR NOT NULL,
+    description TEXT,
+    event_date VARCHAR NOT NULL,  -- YYYY-MM-DD or YYYY-MM-DD HH:MM
+    source_conversation TEXT,
+    tags JSON DEFAULT '[]',
+    status VARCHAR NOT NULL,  -- pending/completed/cancelled
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME
+);
 ```
 
 ### LLM Integration
