@@ -1,7 +1,7 @@
 """Database configuration and models for emotional companionship system."""
 
 import os
-from sqlalchemy import create_engine, Column, String, DateTime, Text, JSON
+from sqlalchemy import create_engine, Column, String, DateTime, Text, JSON, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -29,6 +29,26 @@ class DiaryTable(Base):
     category = Column(String, nullable=False)
     emotions = Column(JSON, default=list)
     tags = Column(JSON, default=list)
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=True)
+
+
+class FutureEventTable(Base):
+    """未来事件数据库表"""
+    __tablename__ = "future_events"
+
+    id = Column(String, primary_key=True, index=True)
+    character_id = Column(String, index=True, nullable=False)
+    user_id = Column(String, index=True, nullable=False)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    event_date = Column(String, index=True, nullable=False)
+    original_expression = Column(String, nullable=False)
+    expression_type = Column(String, nullable=False)
+    confidence = Column(Float, nullable=False, default=0.8)
+    source_conversation = Column(Text, nullable=True)
+    tags = Column(JSON, default=list)
+    status = Column(String, nullable=False, default="pending")
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=True)
 
