@@ -1,9 +1,10 @@
+/* Import anime theme - must come first */
+@import './assets/styles/anime-theme.css';
+
+/* Tailwind CSS */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* Import anime theme */
-@import './assets/styles/anime-theme.css';
 
 /* Base styles */
 :root {
