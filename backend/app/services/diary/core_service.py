@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 
 from app.models.database import SessionLocal, DiaryTable
 from app.services.llms.base import LLMBase
+from app.services.diary.tag_service import DiaryTagService
 
 logger = logging.getLogger(__name__)
 
@@ -83,19 +84,9 @@ class DiaryCoreService:
         if "【不值得记录】" in response:
             return None
 
-        # Extract content within 《》
-        start_idx = response.find("《")
-        end_idx = response.find("》")
-
-        if start_idx == -1 or end_idx == -1:
-            # No markers found, not worth recording
-            return None
-
-        content = response[start_idx + 1:end_idx].strip()
-
         # Extract category from the first line
-        lines = content.split("\n", 1)
-        first_line = lines[0]
+        lines = response.split("\n", 1)
+        first_line = lines[0].strip()
 
         if first_line.startswith("分类："):
             category = first_line.split("：", 1)[1].strip()
@@ -103,7 +94,7 @@ class DiaryCoreService:
         else:
             # No category specified, use default
             category = "topic"
-            diary_content = content
+            diary_content = response
 
         return {"category": category, "content": diary_content}
 
@@ -116,10 +107,10 @@ class DiaryCoreService:
     ) -> Optional['DiaryEntry']:
         """Generate diary from actual conversation.
 
-        This method now combines assessment and generation into a single step:
-        - LLM judges if the conversation is worth recording
-        - If worth, returns diary with category in 《》 markers
-        - If not worth, returns 【不值得记录】
+        This method separates assessment, generation, and tagging into distinct steps:
+        1. LLM judges if conversation is worth recording and generates diary with category
+        2. Separate DiaryTagService call for high-density tag generation
+        3. Tag line appended to diary content: "Tag: tag1, tag2, tag3"
 
         Args:
             llm: LLM service instance
@@ -133,7 +124,7 @@ class DiaryCoreService:
         # Format conversation
         conversation_text = self._format_conversation(conversation_messages)
 
-        # Build and send prompt
+        # Build and send diary generation prompt
         prompt = self._build_diary_prompt(conversation_text)
         messages = [
             {"role": "system", "content": prompt},
@@ -151,10 +142,18 @@ class DiaryCoreService:
         diary_content = parsed["content"]
         category = parsed["category"]
 
-        # Generate tags using tag service
-        from app.services.diary.tag_service import DiaryTagService
+        # Generate tags using separate DiaryTagService
         tag_service = DiaryTagService()
         tags = tag_service.generate_tags(diary_content, category, llm)
+
+        # Append tag line to content
+        if tags:
+            tag_line = f"\n\nTag: {', '.join(tags)}"
+            diary_content_with_tags = diary_content + tag_line
+        else:
+            # Fallback to category if no tags generated
+            tags = [category]
+            diary_content_with_tags = f"{diary_content}\n\nTag: {category}"
 
         # Extract emotions
         emotions = self._extract_emotions(diary_content)
@@ -166,7 +165,7 @@ class DiaryCoreService:
             character_id=character_id,
             user_id=user_id,
             date=datetime.now().strftime("%Y-%m-%d"),
-            content=diary_content,
+            content=diary_content_with_tags,
             category=category,
             emotions=emotions,
             tags=tags

@@ -1,48 +1,64 @@
-你是标签生成专家，负责为日记生成高密度、精确的标签。
+# Role: Knowledge Graph Architect for Emotional Companionship System
 
-## 日记内容
+You are a specialized Knowledge Graph Architect responsible for generating high-density, precise tags for diary entries in an emotional companionship system. Your tags will be used for:
+- RAG (Retrieval-Augmented Generation) to find relevant context
+- Knowledge graph construction and relationship mapping
+- Semantic search and content discovery
+
+## Diary Content
 
 {diary_content}
 
-## 日记分类
+## Diary Category
 
 {category}
 
-## 核心原则
+## Core Principles
 
-1. **高密度信息**：每个标签应包含尽可能多的具体信息
-2. **避免泛泛而谈**：不要使用过于宽泛的标签
-3. **多维度组合**：从不同角度提取标签
+1. **High Information Density**: Each tag should encapsulate maximum specific information
+2. **Concrete Over Generic**: Avoid broad categories; use specific, descriptive terms
+3. **Multi-dimensional Extraction**: Capture tags from different angles (topic, emotion, entity, concept, action)
+4. **Relationship-Oriented**: Tags should facilitate connection and retrieval of related content
 
-## 标签质量对比
+## Tag Quality Comparison
 
-**不好的标签（太泛）**：
-技术、学习、工作、开心、难过
+**Poor Tags (Too Generic)**:
+- 技术, 学习, 工作, 开心, 难过, Python, 聊天
 
-**好的标签（具体）**：
-Python异步编程、FastAPI依赖注入、职场压力管理、升职庆祝
+**Excellent Tags (High-Density)**:
+- Python异步编程, FastAPI依赖注入, 职场压力管理, 升职庆祝事件, 装饰器设计模式, 异常处理最佳实践
 
-## 不同分类的标签策略
+## Tag Strategy by Category
 
-**knowledge类**：优先提取具体技术/概念
-示例：不是"编程"而是"Python装饰器模式"
+**Knowledge (知识类)**:
+- Prioritize: specific technology/concept + application scenario
+- Examples: "Python装饰器模式", "FastAPI依赖注入", "异步编程事件循环"
+- Avoid: generic terms like "编程", "技术", "学习"
 
-**topic类**：优先提取核心话题+角度
-示例：不是"工作"而是"职业规划思考"
+**Topic (话题讨论)**:
+- Prioritize: core topic + perspective/angle
+- Examples: "职业规划思考", "工作生活平衡", "人际关系边界", "时间管理方法"
+- Avoid: generic terms like "工作", "生活", "聊天"
 
-**emotional类**：优先提取情绪触发源+情绪类型
-示例：不是"开心"而是"涨工资带来的喜悦"
+**Emotional (情绪时刻)**:
+- Prioritize: emotion trigger + emotion type
+- Examples: "涨工资喜悦", "项目上线焦虑", "周末放松期待", "职场困惑压力"
+- Avoid: generic terms like "开心", "难过", "焦虑"
 
-**milestone类**：优先提取事件类型+意义
-示例：不是"成就"而是"项目完成里程碑"
+**Milestone (里程碑事件)**:
+- Prioritize: event type + significance
+- Examples: "升职加薪里程碑", "项目完成庆祝", "入职周年纪念", "技能认证通过"
+- Avoid: generic terms like "成就", "成功", "完成"
 
-## 输出格式
+## Output Format
 
-严格按照以下格式输出标签（3-5个）：
+Strictly follow this format (3-5 high-density tags):
 
-[[Tag: 标签1, 标签2, 标签3]]
+[[Tag: tag1, tag2, tag3]]
 
-示例：
+Examples:
 [[Tag: Python异步编程, FastAPI依赖注入, 装饰器模式]]
+[[Tag: 职业规划思考, 工作生活平衡, 个人成长]]
+[[Tag: 涨工资喜悦, 职场成就感, 经济压力缓解]]
 
-根据上述日记内容和分类，生成精确的标签：
+Now generate precise, high-density tags for the diary above:
