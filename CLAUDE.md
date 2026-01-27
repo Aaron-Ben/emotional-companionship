@@ -97,7 +97,7 @@ VITE_API_URL=http://localhost:8000
 
 1. **Chat Flow**: Frontend sends message → `chat_service.py` → LLM API → streaming response with AI assessment → async diary extraction if worth recording → temporal event extraction → response to frontend
 2. **Diary Generation**: AI evaluates conversation worthiness during chat → if worth recording → `diary/core_service.py` extracts from actual conversation → quality check → SQLite storage
-3. **Character System**: YAML files in `backend/app/resources/characters/` loaded at startup → `character_service.py` serves character data
+3. **Character System**: YAML files in `backend/app/characters/` loaded at startup → `character_service.py` serves character data
 4. **Temporal Timeline**: Chat mentions future time → `temporal/extractor.py` extracts time expressions → `temporal/normalizer.py` normalizes to absolute datetime → SQLite storage via `temporal/retriever.py`
 
 ### Diary System Architecture
@@ -194,7 +194,7 @@ CREATE TABLE future_events (
 
 - **Multi-user support**: Data isolated by `user_id`
 - **Diary storage**: SQLite-only (single source of truth)
-- **Character configs**: YAML files auto-loaded from `backend/app/resources/characters/`
+- **Character configs**: YAML files auto-loaded from `backend/app/characters/`
 - **API docs**: Available at `http://localhost:8000/docs` (Swagger UI) when backend is running
 - **CI runs**: On push/PR to main/develop branches via GitHub Actions
 - **Python version**: 3.13+
@@ -202,7 +202,7 @@ CREATE TABLE future_events (
 
 ## Adding New Characters
 
-Create YAML file in `backend/app/resources/characters/` with:
+Create YAML file in `backend/app/characters/` with:
 - Basic info (name, age, personality)
 - Behavior preferences (initiative level, topic preferences)
 - Speaking style (catchphrases, tone)

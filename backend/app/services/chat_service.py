@@ -6,14 +6,13 @@ from datetime import datetime
 
 from app.services.llms.base import LLMBase
 from app.services.character_service import CharacterService
-from app.services.diary import DiaryCoreService, DiaryAssessmentService
+from app.services.diary import DiaryCoreService
 from app.models.character import UserCharacterPreference
 from app.schemas.message import (
     ChatRequest,
     ChatResponse,
     EmotionState,
-    MessageContext,
-    DiaryAssessment
+    MessageContext
 )
 
 
@@ -33,7 +32,6 @@ class ChatService:
         self.llm = llm
         self.character_service = character_service
         self.diary_core_service = DiaryCoreService()
-        self.diary_assessment_service = DiaryAssessmentService()
 
     async def chat(
         self,
@@ -68,9 +66,6 @@ class ChatService:
             context=message_context.dict() if message_context else None
         )
 
-        # Add diary assessment prompt (separate from character personality)
-        system_prompt += self.diary_assessment_service.build_assessment_prompt()
-
         # Add diary context if available
         if self.diary_core_service:
             diary_context = await self._get_diary_context(
@@ -91,32 +86,8 @@ class ChatService:
         # Add current message
         messages.append({"role": "user", "content": request.message})
 
-        # Get diary assessment tool
-        diary_assessment_tool = self.diary_assessment_service.get_assessment_tool()
-
-        # Generate response with function calling
-        response = self.llm.generate_response(
-            messages=messages,
-            tools=[diary_assessment_tool],
-            tool_choice="auto"
-        )
-
-        # Parse response and extract diary assessment
-        message_content = response
-        diary_assessment = None
-
-        if isinstance(response, dict) and "tool_calls" in response:
-            message_content = response.get("content", "")
-            for tool_call in response.get("tool_calls", []):
-                if tool_call.get("name") == "assess_diary_worthiness":
-                    try:
-                        diary_assessment = DiaryAssessment(**tool_call.get("arguments", {}))
-                    except Exception as e:
-                        # Log error but don't fail the chat
-                        import logging
-                        logging.warning(f"Failed to parse diary assessment: {e}")
-        elif isinstance(response, str):
-            message_content = response
+        # Generate response (no function calling needed)
+        message_content = self.llm.generate_response(messages)
 
         # Build response object
         return ChatResponse(
@@ -124,7 +95,6 @@ class ChatService:
             character_id=request.character_id,
             context_used=message_context.dict() if message_context else None,
             emotion_detected=emotion_state,
-            diary_assessment=diary_assessment,
             timestamp=datetime.now()
         )
 

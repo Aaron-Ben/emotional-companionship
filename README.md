@@ -359,7 +359,7 @@ service.save_character(character)
 
 ### 角色配置
 
-角色配置文件位于 `backend/app/resources/characters/`，支持：
+角色配置文件位于 `backend/app/characters/`，支持：
 - **基础角色**：传统配置，无需修改即可运行
 - **扩展角色**：添加扩展功能配置，启用高级特性
 
@@ -370,71 +370,12 @@ service.save_character(character)
 - **mentor**：导师，注重指导和知识分享
 - **friend**：朋友，轻松平等的交流
 
-## 开发指南
-
-### 运行测试
-
-```bash
-# 测试基础角色系统
-python tests/test_character_integration.py
-
-# 测试扩展功能
-python tests/test_character_extensions.py
-```
-
-### 数据库管理
-
-```bash
-# 查看扩展表状态
-python migrate_extensions.py info
-
-# 创建扩展表
-python migrate_extensions.py migrate
-
-# 回滚扩展表（删除）
-python migrate_extensions.py rollback
-```
 
 ### 添加新角色
 
-1. 在 `backend/app/resources/characters/` 创建新的 YAML 文件
+1. 在 `backend/app/characters/` 创建新的 YAML 文件
 2. 从模板复制或从头定义
 3. 可选：添加扩展功能配置
 4. 重启后端服务自动加载
 
-### 自定义扩展功能
 
-修改对应的服务文件：
-- `conversation_depth_service.py` - 调整深度检测逻辑
-- `memory_continuity_service.py` - 修改记忆存储和检索
-- `emotional_authenticity_service.py` - 调整情绪系统
-- `practical_features_service.py` - 修改实用功能
-
-## 常见问题
-
-**Q: 扩展功能会影响现有角色吗？**
-A: 不会。所有扩展功能都是可选的，现有角色无需修改即可继续使用。
-
-**Q: 如何为现有角色启用扩展功能？**
-A: 在角色的 YAML 配置文件中添加对应的扩展配置即可。
-
-**Q: 记忆会占用多少存储空间？**
-A: 每条记忆约 100-500 字，千条记忆约占用 1-2MB。
-
-**Q: 如何查看数据库中的记忆？**
-A: 使用 SQLite 工具打开 `emotional_companionship.db`，查看 `memory_banks` 表。
-
-**Q: 支持多用户吗？**
-A: 支持，每个用户的关系状态、记忆、提醒都是独立的。
-
-## 许可证
-
-MIT License
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## 联系方式
-
-如有问题或建议，请通过 GitHub Issues 联系。

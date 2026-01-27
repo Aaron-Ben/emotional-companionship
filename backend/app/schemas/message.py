@@ -69,31 +69,12 @@ class ChatRequest(BaseModel):
         }
 
 
-class DiaryAssessment(BaseModel):
-    """AI's assessment of whether this conversation is worth recording in diary."""
-    should_record: bool = Field(..., description="Whether conversation is worth recording")
-    reason: Optional[str] = Field(None, description="Reason for diary decision")
-    category: Optional[str] = Field(None, description="Category: knowledge/topic/emotional/milestone")
-    key_points: List[str] = Field(default_factory=list, description="Key points to extract")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "should_record": True,
-                "reason": "User learned Python decorators",
-                "category": "knowledge",
-                "key_points": ["Python decorators", "new skill"]
-            }
-        }
-
-
 class ChatResponse(BaseModel):
     """Response from character chat."""
     message: str = Field(..., description="Character's response message")
     character_id: str = Field(..., description="Character that generated the response")
     context_used: Optional[MessageContext] = Field(None, description="Context information used")
     emotion_detected: Optional[EmotionState] = Field(None, description="Emotion detected from user's message")
-    diary_assessment: Optional[DiaryAssessment] = Field(None, description="Diary recording assessment")
     timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
 
     class Config:

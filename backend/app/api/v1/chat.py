@@ -1,6 +1,6 @@
 """Chat API endpoints for character-based conversations."""
 
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from datetime import datetime
@@ -11,10 +11,10 @@ from app.services.llms.qwen import QwenLLM
 from app.services.llms.deepseek import DeepSeekLLM
 from app.services.character_service import CharacterService
 from app.services.chat_service import ChatService
-from app.services.diary import DiaryCoreService, DiaryAssessmentService
+from app.services.diary import DiaryCoreService
 from app.services.temporal import TimeExtractor, EventRetriever
 from app.models.character import UserCharacterPreference
-from app.schemas.message import ChatRequest, ChatResponse, StreamChatResponse, DiaryAssessment
+from app.schemas.message import ChatRequest, ChatResponse
 
 # Create router
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
@@ -76,7 +76,6 @@ async def extract_and_save_diary(
     character_id: str,
     user_id: str,
     conversation_messages: List[Dict[str, str]],
-    diary_assessment: DiaryAssessment,
     llm: QwenLLM | DeepSeekLLM,
     diary_service: DiaryCoreService
 ):
@@ -84,27 +83,22 @@ async def extract_and_save_diary(
     Extract and save diary from actual conversation (async).
 
     This runs in the background after a response is sent.
-    Only called when AI determines the conversation is worth recording.
+    The diary service internally judges whether to record based on the conversation content.
     """
     try:
-        if not diary_assessment.should_record:
-            return
+        logger.info(f"Checking if conversation worth recording for {user_id}/{character_id}")
 
-        logger.info(
-            f"Extracting diary for {user_id}/{character_id}: "
-            f"category={diary_assessment.category}, "
-            f"reason={diary_assessment.reason}"
-        )
-
-        await diary_service.generate_from_conversation(
+        diary_entry = await diary_service.generate_from_conversation(
             llm=llm,
             character_id=character_id,
             user_id=user_id,
             conversation_messages=conversation_messages,
-            assessment=diary_assessment
         )
 
-        logger.info(f"Diary extracted and saved for {user_id}/{character_id}")
+        if diary_entry:
+            logger.info(f"Diary extracted and saved for {user_id}/{character_id}: {diary_entry.category}")
+        else:
+            logger.info(f"Conversation not worth recording for {user_id}/{character_id}")
 
     except Exception as e:
         logger.error(f"Error extracting diary: {e}")
@@ -204,32 +198,25 @@ async def chat(
             user_id=user_id
         )
 
-        # If AI assessed this conversation as worth recording, extract diary asynchronously
-        if response.diary_assessment and response.diary_assessment.should_record:
-            # Build current conversation ONLY (不包括历史，避免日记内容重复)
-            # 日记应该只记录本次对话的新增内容
-            conversation_messages = [
-                {"role": "user", "content": request.message},
-                {"role": "assistant", "content": response.message}
-            ]
-
-            # Trigger async diary extraction (don't wait for it)
-            asyncio.create_task(
-                extract_and_save_diary(
-                    character_id=request.character_id,
-                    user_id=user_id,
-                    conversation_messages=conversation_messages,
-                    diary_assessment=response.diary_assessment,
-                    llm=llm,
-                    diary_service=diary_core_service
-                )
-            )
-
-        # Always trigger async timeline extraction (don't wait for it)
+        # Build current conversation ONLY (不包括历史，避免日记内容重复)
+        # 日记应该只记录本次对话的新增内容
         conversation_messages = [
             {"role": "user", "content": request.message},
             {"role": "assistant", "content": response.message}
         ]
+
+        # Trigger async diary extraction (service will judge if worth recording)
+        asyncio.create_task(
+            extract_and_save_diary(
+                character_id=request.character_id,
+                user_id=user_id,
+                conversation_messages=conversation_messages,
+                llm=llm,
+                diary_service=diary_core_service
+            )
+        )
+
+        # Always trigger async timeline extraction (don't wait for it)
         asyncio.create_task(
             extract_and_save_timeline(
                 character_id=request.character_id,
@@ -307,10 +294,9 @@ async def chat_stream(
             # Trigger diary generation after stream completes
             response_text = "".join(full_response)
             asyncio.create_task(
-                assess_and_extract_diary_stream(
+                extract_diary_stream(
                     character_id=request.character_id,
                     user_id=user_id,
-                    conversation_history=request.conversation_history,
                     user_message=request.message,
                     assistant_response=response_text,
                     llm=llm,
@@ -331,17 +317,16 @@ async def chat_stream(
     )
 
 
-async def assess_and_extract_diary_stream(
+async def extract_diary_stream(
     character_id: str,
     user_id: str,
-    conversation_history: Optional[List[Dict[str, str]]],
     user_message: str,
     assistant_response: str,
     llm: QwenLLM | DeepSeekLLM,
     diary_core_service: DiaryCoreService
 ):
     """
-    评估对话并提取日记（用于流式端点）。
+    提取日记（用于流式端点）。
     """
     try:
         # 构建当前对话 ONLY（不包括历史，避免日记内容重复）
@@ -351,33 +336,13 @@ async def assess_and_extract_diary_stream(
             {"role": "assistant", "content": assistant_response}
         ]
 
-        # AI评估
-        assessment_service = DiaryAssessmentService()
-        assessment_messages = [
-            {"role": "system", "content": assessment_service.build_assessment_prompt()},
-            {"role": "user", "content": f"请评估以下对话是否值得记录进日记：\n\n" + "\n".join([f"{m['role']}: {m['content']}" for m in conversation_messages])}
-        ]
-
-        assessment_tool = assessment_service.get_assessment_tool()
-        response = llm.generate_response(messages=assessment_messages, tools=[assessment_tool], tool_choice="auto")
-
-        # 提取评估结果
-        diary_assessment = None
-        if isinstance(response, dict) and "tool_calls" in response:
-            for tool_call in response.get("tool_calls", []):
-                if tool_call.get("name") == "assess_diary_worthiness":
-                    diary_assessment = DiaryAssessment(**tool_call.get("arguments", {}))
-                    break
-
-        # 如果值得记录，提取并保存日记
-        if diary_assessment and diary_assessment.should_record:
-            await diary_core_service.generate_from_conversation(
-                llm=llm,
-                character_id=character_id,
-                user_id=user_id,
-                conversation_messages=conversation_messages,
-                assessment=diary_assessment
-            )
+        # Generate diary (service will judge if worth recording)
+        await diary_core_service.generate_from_conversation(
+            llm=llm,
+            character_id=character_id,
+            user_id=user_id,
+            conversation_messages=conversation_messages,
+        )
 
         # Always extract timeline events
         await extract_and_save_timeline(
@@ -388,7 +353,7 @@ async def assess_and_extract_diary_stream(
         )
 
     except Exception as e:
-        logger.error(f"Error in assess_and_extract_diary_stream: {e}")
+        logger.error(f"Error in extract_diary_stream: {e}")
 
 
 @router.post("/starter")

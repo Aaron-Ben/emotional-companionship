@@ -24,12 +24,12 @@ class CharacterService:
 
         Args:
             characters_dir: Directory containing character YAML files.
-                          Defaults to app/resources/characters/
+                          Defaults to app/characters/
         """
         if characters_dir is None:
-            # Default to app/resources/characters/
+            # Default to app/characters/
             current_dir = Path(__file__).parent.parent
-            characters_dir = current_dir / "resources" / "characters"
+            characters_dir = current_dir / "characters"
 
         self.characters_dir = Path(characters_dir)
         self._templates: Dict[str, CharacterTemplate] = {}

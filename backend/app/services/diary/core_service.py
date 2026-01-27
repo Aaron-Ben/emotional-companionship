@@ -56,28 +56,56 @@ class DiaryCoreService:
             lines.append(f"{role}: {msg['content']}")
         return "\n".join(lines)
 
-    def _build_diary_prompt(
-        self,
-        conversation_text: str,
-        assessment: 'DiaryAssessment'
-    ) -> str:
+    def _build_diary_prompt(self, conversation_text: str) -> str:
         """Build diary generation prompt from template.
 
         Args:
             conversation_text: Formatted conversation text
-            assessment: AI assessment result
 
         Returns:
             Complete prompt for LLM
         """
         prompt_template = self._load_prompt("diary_generation.txt")
+        return prompt_template.format(conversation_text=conversation_text)
 
-        return prompt_template.format(
-            conversation_text=conversation_text,
-            reason=assessment.reason,
-            category=assessment.category,
-            key_points=', '.join(assessment.key_points)
-        )
+    def _parse_diary_response(self, response: str) -> Optional[Dict[str, any]]:
+        """Parse LLM response to extract category and diary content.
+
+        Args:
+            response: LLM response text
+
+        Returns:
+            Dict with 'category' and 'content' if worth recording, None otherwise
+        """
+        response = response.strip()
+
+        # Check if not worth recording
+        if "【不值得记录】" in response:
+            return None
+
+        # Extract content within 《》
+        start_idx = response.find("《")
+        end_idx = response.find("》")
+
+        if start_idx == -1 or end_idx == -1:
+            # No markers found, not worth recording
+            return None
+
+        content = response[start_idx + 1:end_idx].strip()
+
+        # Extract category from the first line
+        lines = content.split("\n", 1)
+        first_line = lines[0]
+
+        if first_line.startswith("分类："):
+            category = first_line.split("：", 1)[1].strip()
+            diary_content = lines[1].strip() if len(lines) > 1 else ""
+        else:
+            # No category specified, use default
+            category = "topic"
+            diary_content = content
+
+        return {"category": category, "content": diary_content}
 
     async def generate_from_conversation(
         self,
@@ -85,49 +113,48 @@ class DiaryCoreService:
         character_id: str,
         user_id: str,
         conversation_messages: List[Dict],
-        assessment: 'DiaryAssessment'
     ) -> Optional['DiaryEntry']:
-        """Generate diary from actual conversation (unified entry point).
+        """Generate diary from actual conversation.
 
-        This is the main method for diary generation, replacing the old
-        generate_diary() and extract_diary_from_conversation() methods.
+        This method now combines assessment and generation into a single step:
+        - LLM judges if the conversation is worth recording
+        - If worth, returns diary with category in 《》 markers
+        - If not worth, returns 【不值得记录】
 
         Args:
             llm: LLM service instance
             character_id: Character ID
             user_id: User ID
             conversation_messages: Complete conversation history
-            assessment: AI assessment result
 
         Returns:
-            Generated diary entry, or None if quality check fails
+            Generated diary entry, or None if not worth recording
         """
         # Format conversation
         conversation_text = self._format_conversation(conversation_messages)
 
         # Build and send prompt
-        prompt = self._build_diary_prompt(conversation_text, assessment)
+        prompt = self._build_diary_prompt(conversation_text)
         messages = [
             {"role": "system", "content": prompt},
-            {"role": "user", "content": "写日记吧～"}
+            {"role": "user", "content": "判断是否值得记录并写日记～"}
         ]
 
-        diary_content = llm.generate_response(messages)
+        response = llm.generate_response(messages)
+
+        # Parse response
+        parsed = self._parse_diary_response(response)
+        if parsed is None:
+            logger.info("Conversation not worth recording diary")
+            return None
+
+        diary_content = parsed["content"]
+        category = parsed["category"]
 
         # Generate tags using tag service
         from app.services.diary.tag_service import DiaryTagService
         tag_service = DiaryTagService()
-        tags = tag_service.generate_tags(diary_content, assessment.category, llm)
-
-        # Quality check
-        from app.services.diary.quality import DiaryQualityService
-        quality_service = DiaryQualityService()
-        recent_diaries = await quality_service.get_recent_diaries(character_id, user_id, limit=5)
-        quality_result = quality_service.check_quality(diary_content, recent_diaries)
-
-        if not quality_result.is_acceptable:
-            logger.warning(f"Diary quality check failed: {quality_result.reason}")
-            return None
+        tags = tag_service.generate_tags(diary_content, category, llm)
 
         # Extract emotions
         emotions = self._extract_emotions(diary_content)
@@ -140,7 +167,7 @@ class DiaryCoreService:
             user_id=user_id,
             date=datetime.now().strftime("%Y-%m-%d"),
             content=diary_content,
-            category=assessment.category,
+            category=category,
             emotions=emotions,
             tags=tags
         )
