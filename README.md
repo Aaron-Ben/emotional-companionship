@@ -48,6 +48,11 @@
 - 支持多轮对话历史记录
 - 情绪检测与状态管理
 
+### 🎤 语音输入（NEW!）
+- **按住说话**：按住麦克风按钮开始录音，松开自动识别
+- **多语言识别**：支持中文、英文、日文、韩文、粤语
+- **快速识别**：基于 Sherpa-ONNX SenseVoice 本地模型，响应迅速
+
 ### 📅 未来时间线（NEW!）
 - **自动时间提取**：从对话中智能识别未来时间表达
   - 相对时间：明天、后天、下周、下周三等
@@ -100,6 +105,8 @@
 - **框架**: FastAPI 0.109.0
 - **数据库**: SQLite + SQLAlchemy 2.0.36
 - **LLM**: 支持通义千问、DeepSeek
+- **语音识别**: Sherpa-ONNX SenseVoice
+- **语音合成**: Genie-TTS (GPT-SoVITS)
 - **Python**: 3.13+
 
 ### 前端
@@ -142,6 +149,9 @@ emotional-companionship/
 │   │   │       ├── normalizer.py  # 时间归一化
 │   │   │       ├── retriever.py  # 事件存储和检索
 │   │   │       └── prompt.py   # 时间线提示词
+│   │   ├── characters/        # 角色模块
+│   │   │   ├── asr.py         # 语音识别
+│   │   │   └── tts.py         # 语音合成
 │   │   ├── resources/         # 资源文件
 │   │   │   ├── characters/    # 角色配置
 │   │   │   │   ├── sister.yaml  # 基础角色
@@ -152,6 +162,9 @@ emotional-companionship/
 │   │   │       └── friend.yaml
 │   │   ├── schemas/           # Pydantic 模型
 │   │   └── main.py            # 应用入口
+│   ├── model/                 # AI 模型文件
+│   │   └── ASR/               # 语音识别模型
+│   │       └── sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/
 │   ├── tests/                 # 测试文件
 │   ├── migrate_extensions.py  # 数据库迁移脚本
 │   └── requirements.txt       # Python 依赖
@@ -169,6 +182,7 @@ emotional-companionship/
 │   │   │   ├── useChat.ts    # 对话 Hook
 │   │   │   └── useCharacter.ts
 │   │   ├── services/         # API 服务
+│   │   │   └── voiceService.ts  # 语音输入服务
 │   │   └── types/            # TypeScript 类型
 │   └── package.json          # Node 依赖
 │
@@ -207,12 +221,21 @@ DASHSCOPE_API_KEY=your_qwen_api_key
 DEEPSEEK_API_KEY=your_deepseek_api_key
 ```
 
-5. 运行数据库迁移（创建扩展功能表）：
+5. **（可选）下载语音识别模型**：
+如需使用语音输入功能，下载 Sherpa-ONNX SenseVoice 模型到 `backend/model/ASR/` 目录：
+```bash
+mkdir -p backend/model/ASR/
+cd backend/model/ASR/
+# 下载并解压模型：https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models
+# 模型路径: sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/
+```
+
+6. 运行数据库迁移（创建扩展功能表）：
 ```bash
 python migrate_extensions.py
 ```
 
-6. 启动后端服务：
+7. 启动后端服务：
 ```bash
 python -m uvicorn app.main:app --reload
 ```
@@ -255,6 +278,10 @@ npm run dev
 - `POST /api/v1/chat/` - 发送消息
 - `POST /api/v1/chat/stream` - 流式对话
 - `POST /api/v1/chat/starter` - 获取对话开场
+- `POST /api/v1/chat/voice` - 语音识别
+- `POST /api/v1/chat/voice/chat` - 语音识别+对话
+- `POST /api/v1/chat/tts` - 文字转语音
+- `GET /api/v1/chat/tts/audio/{filename}` - 获取生成的语音文件
 
 #### 角色
 - `GET /api/v1/character/` - 获取角色列表
