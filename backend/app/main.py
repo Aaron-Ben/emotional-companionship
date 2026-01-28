@@ -21,14 +21,23 @@ async def lifespan(app: FastAPI):
     init_db()
     print("Database initialized successfully")
 
-    # 检查 TTS 模型是否可用
+    # 检查 Genie-TTS 资源目录
     import os
     from pathlib import Path
-    tts_model_path = Path(__file__).parent / "model/TTS/vits-zh-hf-bronya"
-    if tts_model_path.exists() and (tts_model_path / "bronya.onnx").exists():
-        print(f"TTS model found at {tts_model_path}")
+    from app.characters.tts import GENIE_DATA_DIR, load_predefined_character
+
+    genie_data_path = Path(GENIE_DATA_DIR) if GENIE_DATA_DIR else None
+    if genie_data_path and genie_data_path.exists():
+        print(f"Genie-TTS data directory found at {genie_data_path}")
     else:
-        print(f"TTS model not found at {tts_model_path}, TTS will use pyttsx3 fallback")
+        print("Genie-TTS data directory not found, will download on first use")
+
+    # 预加载默认角色
+    try:
+        load_predefined_character("feibi")  # 菲比 - 中文角色
+        print("Genie-TTS character 'feibi' loaded successfully")
+    except Exception as e:
+        print(f"Failed to load Genie-TTS character: {e}")
 
     yield
     # 关闭时的清理工作（如果需要）

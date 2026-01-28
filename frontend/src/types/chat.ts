@@ -86,7 +86,7 @@ export type RecordingState = 'idle' | 'recording' | 'processing';
 // TTS types
 export interface TTSRequest {
   text: string;
-  engine?: 'vits' | 'pyttsx3';
+  engine?: 'genie';
   character_id?: string;
 }
 

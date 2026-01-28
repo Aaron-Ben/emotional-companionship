@@ -12,7 +12,7 @@ export async function textToSpeech(request: TTSRequest): Promise<TTSResponse> {
     method: 'POST',
     body: JSON.stringify({
       text: request.text,
-      engine: request.engine || 'vits',
+      engine: request.engine || 'genie',
       character_id: request.character_id || 'sister_001',
     }),
   });
@@ -49,7 +49,7 @@ export function playTTSAudio(audioPath: string): Promise<void> {
  */
 export async function speakText(
   text: string,
-  engine: 'vits' | 'pyttsx3' = 'vits',
+  engine: 'genie' = 'genie',
   characterId: string = 'sister_001'
 ): Promise<void> {
   const response = await textToSpeech({

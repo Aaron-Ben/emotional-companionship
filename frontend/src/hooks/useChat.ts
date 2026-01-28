@@ -284,7 +284,7 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
   // TTS: Play TTS for given text
   const playTTS = useCallback(async (text: string) => {
     try {
-      await speakText(text, 'vits', characterId);
+      await speakText(text, 'genie', characterId);
     } catch (err) {
       console.error('TTS playback failed:', err);
     }

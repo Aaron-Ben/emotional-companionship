@@ -606,16 +606,20 @@ async def text_to_speech(
     request: TTSRequest,
 ):
     """
-    Convert text to speech using local TTS models.
+    Convert text to speech using Genie-TTS (GPT-SoVITS).
 
-    This endpoint supports two TTS engines:
-    - vits: High-quality VITS model (sherpa-onnx)
-    - pyttsx3: System built-in TTS
+    This endpoint uses Genie-TTS for high-quality speech synthesis.
+    Supports Chinese, English, Japanese, and Korean.
 
     Request Body:
     - text: Text to synthesize (required)
-    - engine: TTS engine to use, "vits" or "pyttsx3" (default: "vits")
-    - character_id: Character ID (for future voice selection) (default: "sister_001")
+    - engine: TTS engine to use, "genie" (default: "genie")
+    - character_id: Character ID for voice selection (default: "sister_001")
+
+    Available predefined characters:
+    - feibi: 菲比 (Chinese)
+    - mika: 聖園ミカ (Japanese)
+    - 37: ThirtySeven (English)
 
     Returns:
         Audio file path that can be retrieved via /api/v1/chat/tts/audio/{filename}
@@ -624,7 +628,7 @@ async def text_to_speech(
     ```json
     {
         "text": "你好，哥哥！",
-        "engine": "vits",
+        "engine": "genie",
         "character_id": "sister_001"
     }
     ```
@@ -634,17 +638,13 @@ async def text_to_speech(
 
     try:
         # Import TTS module
-        from app.characters.tts import synthesize, VITS_MODEL_PATH, VOICE_CACHE_PATH
+        from app.characters.tts import synthesize, VOICE_CACHE_PATH, DEFAULT_CHARACTER
 
-        # Check if model is configured (for VITS)
-        if request.engine == "vits":
-            if VITS_MODEL_PATH is None or not os.path.exists(VITS_MODEL_PATH):
-                return TTSResponse(
-                    success=False,
-                    audio_path=None,
-                    error=f"VITS model not found at {VITS_MODEL_PATH}. Please download the model first.",
-                    engine=request.engine
-                )
+        # Map character_id to genie character name
+        character_map = {
+            "sister_001": "feibi",  # 妹妹角色使用菲比的声音（中文）
+        }
+        character_name = character_map.get(request.character_id, DEFAULT_CHARACTER)
 
         # Generate unique filename for this request
         os.makedirs(os.path.dirname(VOICE_CACHE_PATH), exist_ok=True)
@@ -654,9 +654,10 @@ async def text_to_speech(
         # Synthesize speech
         result_path = synthesize(
             text=request.text,
-            engine=request.engine,
+            character_name=character_name,
             output_path=output_path,
-            split_sentences=False
+            engine=request.engine or "genie",
+            language="zh"
         )
 
         # Check if synthesis was successful
@@ -664,14 +665,14 @@ async def text_to_speech(
             return TTSResponse(
                 success=True,
                 audio_path=f"/api/v1/chat/tts/audio/{filename}",
-                engine=request.engine
+                engine=request.engine or "genie"
             )
         else:
             return TTSResponse(
                 success=False,
                 audio_path=None,
                 error="Speech synthesis failed - no audio file generated",
-                engine=request.engine
+                engine=request.engine or "genie"
             )
 
     except RuntimeError as e:
@@ -680,7 +681,7 @@ async def text_to_speech(
             success=False,
             audio_path=None,
             error=str(e),
-            engine=request.engine
+            engine=request.engine or "genie"
         )
     except ValueError as e:
         # Invalid engine parameter
@@ -688,7 +689,7 @@ async def text_to_speech(
             success=False,
             audio_path=None,
             error=str(e),
-            engine=request.engine
+            engine=request.engine or "genie"
         )
     except Exception as e:
         logger.error(f"Error in text_to_speech: {e}")
