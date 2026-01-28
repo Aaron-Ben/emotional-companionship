@@ -1,6 +1,6 @@
 """Enhanced message schemas with character context and emotion support."""
 
-from typing import List, Optional, Dict, Any, Literal
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from datetime import datetime
 
@@ -96,3 +96,22 @@ class StreamChatResponse(BaseModel):
     chunk: str = Field(..., description="Chunk of the response text")
     character_id: str = Field(..., description="Character generating the response")
     done: bool = Field(default=False, description="Whether this is the final chunk")
+
+
+class VoiceResponse(BaseModel):
+    """Response from voice input processing."""
+    text: str = Field(..., description="Recognized text from voice input")
+    emotion: Optional[str] = Field(None, description="Detected emotion from voice (e.g., [开心], [伤心])")
+    event: Optional[str] = Field(None, description="Detected event from voice (e.g., [鼓掌], [大笑])")
+    success: bool = Field(..., description="Whether recognition was successful")
+    error: Optional[str] = Field(None, description="Error message if recognition failed")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "text": "你好啊",
+                "emotion": "[开心]",
+                "event": None,
+                "success": True
+            }
+        }

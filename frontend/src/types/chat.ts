@@ -62,3 +62,25 @@ export interface CurrentTurn {
   aiMessage: string;
   timestamp: Date;
 }
+
+// Voice input types
+export interface VoiceInputOptions {
+  characterId?: string;
+  enableVoiceprint?: boolean;
+  voiceprintThreshold?: number;
+}
+
+export interface VoiceRecognitionResult {
+  text: string;
+  emotion?: string;
+  event?: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface VoiceChatOptions extends VoiceInputOptions {
+  conversationHistory?: Message[];
+  stream?: boolean;
+}
+
+export type RecordingState = 'idle' | 'recording' | 'processing';

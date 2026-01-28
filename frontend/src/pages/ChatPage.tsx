@@ -1,6 +1,6 @@
 /** Main chat page component - RPG dialogue style */
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { RPGChatPanel } from '../components/conversation';
 import { ChatHistory } from '../components/history';
 import { FloatingActionButton } from '../components/ui';
@@ -18,6 +18,15 @@ export const ChatPage: React.FC = () => {
   const [showTimeline, setShowTimeline] = useState(false);
   const [selectedDiary, setSelectedDiary] = useState<DiaryEntry | null>(null);
   const [userInput, setUserInput] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+
+  const handleVoiceInputStart = useCallback(() => {
+    setIsRecording(true);
+  }, []);
+
+  const handleVoiceInputEnd = useCallback(() => {
+    setIsRecording(false);
+  }, []);
 
   const {
     currentTurn,
@@ -86,6 +95,8 @@ export const ChatPage: React.FC = () => {
         onSend={handleSend}
         onNewTurn={startNewTurn}
         placeholder="和妹妹聊聊天吧～"
+        onVoiceInputStart={handleVoiceInputStart}
+        onVoiceInputEnd={handleVoiceInputEnd}
       />
 
       {/* Floating Buttons */}

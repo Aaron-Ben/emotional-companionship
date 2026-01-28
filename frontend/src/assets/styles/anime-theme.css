@@ -567,24 +567,19 @@ body {
 .user-input-area {
   margin-bottom: 16px;
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.user-input-area .textarea-container {
-  flex: 1;
+.user-input-actions {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.user-input-area .input-label {
-  flex-shrink: 0;
-  white-space: nowrap;
+  justify-content: flex-end;
 }
 
 .user-input-area .rpg-textarea {
-  flex: 1;
+  width: 100%;
   min-height: 44px;
   height: 44px;
 }
@@ -596,8 +591,52 @@ body {
   white-space: nowrap;
 }
 
-.user-input-area .input-hint {
-  margin-top: 4px;
+/* 语音输入按钮 */
+.rpg-btn-voice {
+  background: linear-gradient(135deg, #98FB98 0%, #7BC67B 100%);
+  color: white;
+  border: none;
+  padding: 0 20px;
+  min-width: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+}
+
+.rpg-btn-voice:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7BC67B 0%, #6AB56A 100%);
+  transform: scale(1.05);
+}
+
+.rpg-btn-voice:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.rpg-btn-voice.recording {
+  background: linear-gradient(135deg, #FF6B6B 0%, #EE5A5A 100%);
+  animation: recordingPulse 1.5s infinite;
+}
+
+@keyframes recordingPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(255, 107, 107, 0);
+  }
+}
+
+.recording-icon {
+  font-size: 18px;
+}
+
+.recording-time {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .input-label {

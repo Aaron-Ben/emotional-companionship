@@ -51,3 +51,5 @@ Thumbs.db
 *.log
 
 emotional_companionship.db
+model/
+data/

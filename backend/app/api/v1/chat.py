@@ -1,7 +1,7 @@
 """Chat API endpoints for character-based conversations."""
 
 from typing import Optional, Dict, List
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from datetime import datetime
 import asyncio
@@ -14,7 +14,7 @@ from app.services.chat_service import ChatService
 from app.services.diary import DiaryCoreService
 from app.services.temporal import TimeExtractor, EventRetriever
 from app.models.character import UserCharacterPreference
-from app.schemas.message import ChatRequest, ChatResponse
+from app.schemas.message import ChatRequest, ChatResponse, VoiceResponse
 
 # Create router
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
@@ -391,3 +391,221 @@ async def get_conversation_starter(
         "character_id": character_id,
         "timestamp": datetime.now().isoformat()
     }
+
+
+@router.post("/voice", response_model=VoiceResponse)
+async def voice_input(
+    audio: UploadFile = File(..., description="Audio file (WAV format, 16kHz, mono)"),
+    character_id: str = Form(default="sister_001", description="Character to chat with"),
+    enable_voiceprint: bool = Form(default=False, description="Whether to enable speaker verification"),
+    voiceprint_threshold: float = Form(default=0.85, description="Speaker verification threshold"),
+):
+    """
+    Process voice input and return recognized text.
+
+    This endpoint accepts an audio file (WAV format), performs speech recognition,
+    and optionally detects emotion and events from the audio.
+
+    Request:
+    - audio: WAV audio file (16kHz, mono, 16-bit)
+    - character_id: Character to chat with (default: "sister_001")
+    - enable_voiceprint: Whether to enable speaker verification (default: false)
+    - voiceprint_threshold: Speaker verification threshold 0.0-1.0 (default: 0.85)
+
+    Returns:
+        Recognized text with optional emotion and event markers
+
+    Example emotion markers: [开心], [伤心], [愤怒], [厌恶], [惊讶]
+    Example event markers: [鼓掌], [大笑], [哭], [打喷嚏], [咳嗽], [深呼吸]
+
+    The audio should be in WAV format with:
+    - Sample rate: 16000 Hz
+    - Channels: 1 (mono)
+    - Bit depth: 16-bit
+    """
+    import os
+
+    try:
+        # Read audio data
+        audio_data = await audio.read()
+
+        # Check if audio data is valid
+        if len(audio_data) < 1000:
+            return VoiceResponse(
+                text="",
+                success=False,
+                error="Audio file too short or empty"
+            )
+
+        # Use ASR module for recognition
+        from app.characters.asr import recognize_audio, ASR_MODEL_PATH
+
+        # Check if model is configured
+        if ASR_MODEL_PATH is None or not os.path.exists(ASR_MODEL_PATH):
+            return VoiceResponse(
+                text="",
+                success=False,
+                error="ASR model not configured. Please set up the model first."
+            )
+
+        # Perform recognition
+        result = recognize_audio(
+            audio_data=audio_data,
+            enable_voiceprint=enable_voiceprint,
+            voiceprint_threshold=voiceprint_threshold
+        )
+
+        # Parse result to extract emotion and event
+        text = result
+        emotion = None
+        event = None
+
+        # Extract emotion markers
+        for emo in ["[开心]", "[伤心]", "[愤怒]", "[厌恶]", "[惊讶]"]:
+            if emo in result:
+                emotion = emo
+                text = text.replace(emo, "")
+                break
+
+        # Extract event markers
+        for evt in ["[鼓掌]", "[大笑]", "[哭]", "[打喷嚏]", "[咳嗽]", "[深呼吸]"]:
+            if evt in result:
+                event = evt
+                text = text.replace(evt, "")
+                break
+
+        # Clean up text
+        text = text.strip()
+
+        if not text:
+            return VoiceResponse(
+                text="",
+                emotion=emotion,
+                event=event,
+                success=False,
+                error="No speech detected or recognition failed"
+            )
+
+        return VoiceResponse(
+            text=text,
+            emotion=emotion,
+            event=event,
+            success=True
+        )
+
+    except RuntimeError as e:
+        # Model or dependency error
+        return VoiceResponse(
+            text="",
+            success=False,
+            error=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error processing voice input: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing voice input: {str(e)}")
+
+
+@router.post("/voice/chat")
+async def voice_chat(
+    audio: UploadFile = File(..., description="Audio file (WAV format, 16kHz, mono)"),
+    character_id: str = Form(default="sister_001", description="Character to chat with"),
+    conversation_history: Optional[str] = Form(default=None, description="JSON string of conversation history"),
+    stream: bool = Form(default=False, description="Whether to stream the response"),
+):
+    """
+    Process voice input and get character response.
+
+    This is a convenience endpoint that combines voice recognition and chat.
+    It accepts an audio file, performs speech recognition, and sends the
+    recognized text to the character for a response.
+
+    Request:
+    - audio: WAV audio file (16kHz, mono, 16-bit)
+    - character_id: Character to chat with (default: "sister_001")
+    - conversation_history: JSON string of previous messages (optional)
+    - stream: Whether to stream the response (default: false)
+
+    Returns:
+        Character's response to the voice input
+
+    For non-streaming:
+        Returns ChatResponse with the character's reply
+
+    For streaming:
+        Returns SSE stream with response chunks
+    """
+    import json
+
+    try:
+        # First, perform voice recognition
+        voice_response = await voice_input(
+            audio=audio,
+            character_id=character_id,
+            enable_voiceprint=False,
+            voiceprint_threshold=0.85
+        )
+
+        if not voice_response.success:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Voice recognition failed: {voice_response.error}"
+            )
+
+        # Combine recognized text with emotion/event markers
+        message = voice_response.text or ""
+        if voice_response.emotion:
+            message = voice_response.emotion + message
+        if voice_response.event:
+            message = voice_response.event + message
+
+        # Parse conversation history
+        history = None
+        if conversation_history:
+            try:
+                history = json.loads(conversation_history)
+            except json.JSONDecodeError:
+                pass
+
+        # Create chat request
+        chat_request = ChatRequest(
+            message=message,
+            character_id=character_id,
+            conversation_history=history,
+            stream=stream
+        )
+
+        # If streaming, use the stream endpoint
+        if stream:
+            # Import here to avoid circular dependency
+            user_id = get_mock_user_id()
+            character_service = get_character_service()
+            llm = get_llm_service()
+            diary_core_service = get_diary_core_service()
+
+            return await chat_stream(
+                request=chat_request,
+                user_id=user_id,
+                character_service=character_service,
+                llm=llm,
+                diary_core_service=diary_core_service
+            )
+
+        # Non-streaming: use the regular chat endpoint
+        user_id = get_mock_user_id()
+        character_service = get_character_service()
+        llm = get_llm_service()
+        diary_core_service = get_diary_core_service()
+
+        return await chat(
+            request=chat_request,
+            user_id=user_id,
+            character_service=character_service,
+            llm=llm,
+            diary_core_service=diary_core_service
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in voice_chat: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing voice chat: {str(e)}")
