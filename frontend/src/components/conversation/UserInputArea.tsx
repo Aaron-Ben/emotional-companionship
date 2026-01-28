@@ -1,7 +1,7 @@
 /** User Input Area Component */
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { voiceToText } from '../../services/voiceService';
+import { AudioRecorder, recognizeFromBlob } from '../../services/voiceService';
 import type { RecordingState } from '../../types/chat';
 
 interface UserInputAreaProps {
@@ -30,6 +30,7 @@ export const UserInputArea: React.FC<UserInputAreaProps> = ({
   onVoiceInputEnd,
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const recorderRef = useRef<AudioRecorder | null>(null);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [recordingTime, setRecordingTime] = useState(0);
 
@@ -68,29 +69,40 @@ export const UserInputArea: React.FC<UserInputAreaProps> = ({
     }
   };
 
-  // Handle voice input
-  const handleVoiceInput = useCallback(async () => {
-    if (recordingState === 'recording') {
-      // Stop recording (this shouldn't happen as auto-stop is enabled)
-      return;
-    }
-
-    setRecordingState('recording');
-    onVoiceInputStart?.();
+  // 按下按钮开始录音
+  const handleVoiceStart = useCallback(async () => {
+    if (disabled || isStreaming) return;
 
     try {
-      const result = await voiceToText(
-        { characterId: 'sister_001' },
-        30 // max 30 seconds
-      );
+      const recorder = new AudioRecorder();
+      recorderRef.current = recorder;
+      await recorder.start();
+
+      setRecordingState('recording');
+      onVoiceInputStart?.();
+    } catch (error) {
+      console.error('Failed to start recording:', error);
+      recorderRef.current = null;
+    }
+  }, [disabled, isStreaming, onVoiceInputStart]);
+
+  // 松开按钮停止录音并识别
+  const handleVoiceEnd = useCallback(async () => {
+    if (recordingState !== 'recording' || !recorderRef.current) return;
+
+    setRecordingState('processing');
+
+    try {
+      const audioBlob = await recorderRef.current.stop();
+      recorderRef.current = null;
+
+      const result = await recognizeFromBlob(audioBlob, { characterId: 'sister_001' });
 
       if (result.success && result.text) {
-        // Append recognized text to current input
         const newText = value + (value ? ' ' : '') + result.text;
         onChange(newText);
       } else if (result.error) {
         console.error('Voice recognition failed:', result.error);
-        // Could show a toast notification here
       }
     } catch (error) {
       console.error('Voice input error:', error);
@@ -98,9 +110,9 @@ export const UserInputArea: React.FC<UserInputAreaProps> = ({
       setRecordingState('idle');
       onVoiceInputEnd?.();
     }
-  }, [recordingState, value, onChange, onVoiceInputStart, onVoiceInputEnd]);
+  }, [recordingState, value, onChange, onVoiceInputEnd]);
 
-  // Format recording time
+  // 格式化录音时间
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -120,12 +132,20 @@ export const UserInputArea: React.FC<UserInputAreaProps> = ({
         rows={1}
       />
       <div className="user-input-actions">
-        {/* Voice input button */}
+        {/* Voice input button - 按住说话 */}
         <button
           className={`rpg-btn rpg-btn-voice ${recordingState === 'recording' ? 'recording' : ''}`}
-          onClick={handleVoiceInput}
-          disabled={disabled || recordingState === 'recording' || isStreaming}
-          title={recordingState === 'recording' ? '录音中...' : '语音输入'}
+          onMouseDown={handleVoiceStart}
+          onMouseUp={handleVoiceEnd}
+          onMouseLeave={handleVoiceEnd}
+          onTouchStart={(e) => { e.preventDefault(); handleVoiceStart(); }}
+          onTouchEnd={(e) => { e.preventDefault(); handleVoiceEnd(); }}
+          disabled={disabled || recordingState !== 'idle' || isStreaming}
+          title={
+            recordingState === 'recording' ? '松开结束录音' :
+            recordingState === 'processing' ? '识别中...' :
+            '按住说话'
+          }
           type="button"
         >
           {recordingState === 'recording' ? (
@@ -133,6 +153,8 @@ export const UserInputArea: React.FC<UserInputAreaProps> = ({
               <span className="recording-icon">🎤</span>
               <span className="recording-time">{formatTime(recordingTime)}</span>
             </>
+          ) : recordingState === 'processing' ? (
+            <span className="processing">...</span>
           ) : (
             <span>🎤</span>
           )}
@@ -141,7 +163,7 @@ export const UserInputArea: React.FC<UserInputAreaProps> = ({
           <button
             className="rpg-btn rpg-btn-primary"
             onClick={onSend}
-            disabled={!canSend || isStreaming || recordingState === 'recording'}
+            disabled={!canSend || isStreaming || recordingState !== 'idle'}
           >
             发送
           </button>

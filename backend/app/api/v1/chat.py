@@ -420,10 +420,16 @@ async def voice_input(
     - Bit depth: 16-bit
     """
     import os
+    import time
+
+    backend_start = time.time()
 
     try:
         # Read audio data
+        read_start = time.time()
         audio_data = await audio.read()
+        read_time = (time.time() - read_start) * 1000
+        logger.info(f"[ASR Backend] 接收音频: {read_time:.0f}ms, 大小: {len(audio_data)} bytes")
 
         # Check if audio data is valid
         if len(audio_data) < 1000:
@@ -445,7 +451,12 @@ async def voice_input(
             )
 
         # Perform recognition
+        asr_start = time.time()
         result = recognize_audio(audio_data=audio_data)
+        asr_time = (time.time() - asr_start) * 1000
+
+        backend_total = (time.time() - backend_start) * 1000
+        logger.info(f"[ASR Backend] 识别完成: {asr_time:.0f}ms, 总后端耗时: {backend_total:.0f}ms")
 
         # Parse result to extract emotion and event
         text = result

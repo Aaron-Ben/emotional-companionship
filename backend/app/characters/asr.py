@@ -8,9 +8,13 @@
 import json
 import os
 import wave
+import time
+import logging
 from pathlib import Path
 from typing import Optional
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 # 模块所在目录的父目录（backend）
 _MODULE_DIR = Path(__file__).parent.parent.parent
@@ -123,6 +127,7 @@ def recognize_audio(audio_data: bytes) -> str:
         RuntimeError: 当 ASR 模型未配置时
     """
     global _recognizer
+    total_start = time.time()
 
     if ASR_MODEL_PATH is None:
         raise RuntimeError("ASR 模型未配置，请设置 ASR_MODEL_PATH")
@@ -134,23 +139,31 @@ def recognize_audio(audio_data: bytes) -> str:
         raise RuntimeError("sherpa-onnx 或 soundfile 未安装，请先安装")
 
     # 保存音频到缓存文件
+    write_start = time.time()
     os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
     with wave.open(CACHE_PATH, 'wb') as wf:
         wf.setnchannels(CHANNELS)
         wf.setsampwidth(2)  # 16-bit = 2 bytes
         wf.setframerate(RATE)
         wf.writeframes(audio_data)
+    write_time = (time.time() - write_start) * 1000
 
     # 检查音频时长
+    check_start = time.time()
     with wave.open(CACHE_PATH, 'rb') as wf:
         n_frames = wf.getnframes()
         duration = n_frames / RATE
+    check_time = (time.time() - check_start) * 1000
+
+    logger.info(f"[ASR] 写入文件: {write_time:.0f}ms, 检查时长: {check_time:.0f}ms, 音频时长: {duration:.1f}s")
 
     if duration < SILENCE_DURATION + 0.5:
+        logger.info(f"[ASR] 音频太短，跳过识别")
         return ""
 
     # 初始化识别器
     if _recognizer is None:
+        init_start = time.time()
         model = f"{ASR_MODEL_PATH}/model.int8.onnx"
         tokens = f"{ASR_MODEL_PATH}/tokens.txt"
         _recognizer = sherpa_onnx.OfflineRecognizer.from_sense_voice(
@@ -159,13 +172,20 @@ def recognize_audio(audio_data: bytes) -> str:
             use_itn=True,
             num_threads=max(1, int(os.cpu_count()) - 1)
         )
+        init_time = (time.time() - init_start) * 1000
+        logger.info(f"[ASR] 模型初始化: {init_time:.0f}ms")
 
     # 执行识别
+    infer_start = time.time()
     audio, sample_rate = sf.read(CACHE_PATH, dtype="float32", always_2d=True)
     asr_stream = _recognizer.create_stream()
     asr_stream.accept_waveform(sample_rate, audio[:, 0])
     _recognizer.decode_stream(asr_stream)
     result = json.loads(str(asr_stream.result))
+    infer_time = (time.time() - infer_start) * 1000
+
+    total_time = (time.time() - total_start) * 1000
+    logger.info(f"[ASR] 读取音频+推理: {infer_time:.0f}ms, 总耗时: {total_time:.0f}ms")
 
     # 解析结果
     emotion_key = result.get('emotion', '').strip('<|>')

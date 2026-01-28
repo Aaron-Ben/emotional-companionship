@@ -22,141 +22,91 @@ export interface VoiceChatOptions extends VoiceInputOptions {
 }
 
 /**
- * Record audio from the microphone using MediaRecorder API.
- * Automatically stops recording after silence is detected.
- *
- * @param maxDuration - Maximum recording duration in seconds (default: 30)
- * @param silenceDuration - Silence duration before auto-stop in seconds (default: 2.0)
- * @returns Promise that resolves with the audio blob
+ * 录音控制器 - 用于手动控制录音的开始和停止
  */
-export async function recordAudio(
-  maxDuration: number = 30,
-  silenceDuration: number = 2.0
-): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    // Check if MediaRecorder is supported
+export class AudioRecorder {
+  private mediaRecorder: MediaRecorder | null = null;
+  private audioChunks: BlobPart[] = [];
+  private stream: MediaStream | null = null;
+  private startTime: number = 0;
+
+  /**
+   * 开始录音
+   */
+  async start(): Promise<void> {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      reject(new Error('Microphone access not supported in this browser'));
-      return;
+      throw new Error('Microphone access not supported in this browser');
     }
 
-    let mediaRecorder: MediaRecorder | null = null;
-    let audioChunks: BlobPart[] = [];
-    let silenceStart: number | null = null;
-    let audioContext: AudioContext | null = null;
-    let analyser: AnalyserNode | null = null;
-    let microphone: MediaStreamAudioSourceNode | null = null;
-    let animationId: number | null = null;
+    // Get microphone access
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        sampleRate: 16000,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
 
-    // Silence detection threshold (dB)
-    const SILENCE_THRESHOLD = -40;
-    const SAMPLE_RATE = 16000;
+    // Create MediaRecorder
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+    this.mediaRecorder = new MediaRecorder(this.stream, { mimeType });
+    this.audioChunks = [];
 
-    async function startRecording() {
-      try {
-        // Get microphone access
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            channelCount: 1,
-            sampleRate: SAMPLE_RATE,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
+    // Store audio chunks
+    this.mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        this.audioChunks.push(event.data);
+      }
+    };
 
-        // Create audio context for silence detection
-        audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
-        analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256;
-        microphone = audioContext.createMediaStreamSource(stream);
-        microphone.connect(analyser);
+    // Start recording
+    this.mediaRecorder.start();
+    this.startTime = Date.now();
+    console.log('[ASR] 开始录音');
+  }
 
-        // Create MediaRecorder
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-        mediaRecorder = new MediaRecorder(stream, { mimeType });
+  /**
+   * 停止录音并返回音频数据
+   */
+  async stop(): Promise<Blob> {
+    if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') {
+      throw new Error('No active recording');
+    }
 
-        // Store audio chunks
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            audioChunks.push(event.data);
-          }
-        };
+    return new Promise((resolve) => {
+      const mimeType = this.mediaRecorder!.mimeType;
 
-        // Handle recording stop
-        mediaRecorder.onstop = () => {
-          const audioBlob = new Blob(audioChunks, { type: mimeType });
+      this.mediaRecorder!.onstop = () => {
+        const audioBlob = new Blob(this.audioChunks, { type: mimeType });
 
-          // Clean up
-          if (animationId !== null) {
-            cancelAnimationFrame(animationId);
-          }
-          if (microphone) {
-            microphone.disconnect();
-          }
-          if (audioContext && audioContext.state !== 'closed') {
-            audioContext.close();
-          }
-          stream.getTracks().forEach((track) => track.stop());
-
-          resolve(audioBlob);
-        };
-
-        // Start recording
-        mediaRecorder.start();
-        const startTime = Date.now();
-
-        // Monitor audio level for silence detection
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-        function detectSilence() {
-          if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-            return;
-          }
-
-          analyser!.getByteFrequencyData(dataArray);
-
-          // Calculate average volume
-          let sum = 0;
-          for (let i = 0; i < dataArray.length; i++) {
-            sum += dataArray[i];
-          }
-          const average = sum / dataArray.length;
-
-          // Convert to dB
-          const db = 20 * Math.log10(average / 255);
-
-          // Check for silence
-          if (db < SILENCE_THRESHOLD) {
-            if (silenceStart === null) {
-              silenceStart = Date.now();
-            } else if (Date.now() - silenceStart > silenceDuration * 1000) {
-              // Silence detected for long enough, stop recording
-              mediaRecorder.stop();
-              return;
-            }
-          } else {
-            silenceStart = null;
-          }
-
-          // Check for max duration
-          if (Date.now() - startTime > maxDuration * 1000) {
-            mediaRecorder.stop();
-            return;
-          }
-
-          animationId = requestAnimationFrame(detectSilence);
+        // Clean up
+        if (this.stream) {
+          this.stream.getTracks().forEach((track) => track.stop());
         }
 
-        detectSilence();
+        const duration = (Date.now() - this.startTime) / 1000;
+        console.log(`[ASR] 停止录音，时长: ${duration.toFixed(1)}s`);
 
-      } catch (error) {
-        reject(error);
-      }
+        resolve(audioBlob);
+      };
+
+      this.mediaRecorder!.stop();
+    });
+  }
+
+  /**
+   * 取消录音并清理资源
+   */
+  cancel(): void {
+    if (this.stream) {
+      this.stream.getTracks().forEach((track) => track.stop());
     }
-
-    startRecording();
-  });
+    this.mediaRecorder = null;
+    this.audioChunks = [];
+    console.log('[ASR] 取消录音');
+  }
 }
 
 /**
@@ -258,64 +208,35 @@ export async function recognizeAudio(
 }
 
 /**
- * Record audio and get character response in one call.
- *
- * @param options - Voice chat options
- * @param maxDuration - Maximum recording duration in seconds
- * @returns Promise that resolves with character response
+ * 从音频 Blob 识别文本（录音完成后的识别流程）
  */
-export async function voiceChat(
-  options: VoiceChatOptions = {},
-  maxDuration: number = 30
-): Promise<Response> {
-  // Record audio
-  const audioBlob = await recordAudio(maxDuration);
-  const wavBlob = await convertToWav(audioBlob);
-
-  // Send to server
-  const formData = new FormData();
-  formData.append('audio', wavBlob, 'audio.wav');
-  formData.append('character_id', options.characterId || 'sister_001');
-  formData.append('stream', String(options.stream || false));
-
-  if (options.conversationHistory) {
-    formData.append('conversation_history', JSON.stringify(options.conversationHistory));
-  }
-
-  const response = await fetch(API_ENDPOINTS.voiceChat(), {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`API Error: ${response.status} - ${errorText}`);
-  }
-
-  return response;
-}
-
-/**
- * Complete voice input workflow: record, convert, and recognize.
- *
- * @param options - Voice input options
- * @param maxDuration - Maximum recording duration in seconds
- * @returns Promise that resolves with recognition result
- */
-export async function voiceToText(
-  options: VoiceInputOptions = {},
-  maxDuration: number = 30
+export async function recognizeFromBlob(
+  audioBlob: Blob,
+  options: VoiceInputOptions = {}
 ): Promise<VoiceRecognitionResult> {
-  try {
-    // Record audio
-    const audioBlob = await recordAudio(maxDuration);
+  const totalTimeStart = performance.now();
+  const timings: { [key: string]: number } = {};
 
+  try {
     // Convert to WAV
+    const convertStart = performance.now();
     const wavBlob = await convertToWav(audioBlob);
+    timings.convert = performance.now() - convertStart;
+    console.log(`[ASR] WAV转换: ${(timings.convert).toFixed(0)}ms, 文件大小: ${(wavBlob.size / 1024).toFixed(1)}KB`);
 
     // Recognize
-    return await recognizeAudio(wavBlob, options);
+    const recognizeStart = performance.now();
+    const result = await recognizeAudio(wavBlob, options);
+    timings.recognize = performance.now() - recognizeStart;
+    timings.total = performance.now() - totalTimeStart;
+
+    console.log(`[ASR] 识别完成: ${(timings.recognize).toFixed(0)}ms`);
+    console.log(`[ASR] 总耗时: ${(timings.total).toFixed(0)}ms (转换: ${(timings.convert).toFixed(0)}ms, 识别: ${(timings.recognize).toFixed(0)}ms)`);
+
+    return result;
   } catch (error) {
+    timings.total = performance.now() - totalTimeStart;
+    console.error(`[ASR] 失败: ${(timings.total).toFixed(0)}ms`, error);
     return {
       text: '',
       success: false,
