@@ -115,3 +115,36 @@ class VoiceResponse(BaseModel):
                 "success": True
             }
         }
+
+
+class TTSRequest(BaseModel):
+    """Request for text-to-speech synthesis."""
+    text: str = Field(..., description="Text to synthesize to speech")
+    engine: str = Field(default="vits", description="TTS engine: 'vits' or 'pyttsx3'")
+    character_id: str = Field(default="sister_001", description="Character ID (for voice selection)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "text": "你好，哥哥！",
+                "engine": "vits",
+                "character_id": "sister_001"
+            }
+        }
+
+
+class TTSResponse(BaseModel):
+    """Response from text-to-speech synthesis."""
+    success: bool = Field(..., description="Whether synthesis was successful")
+    audio_path: Optional[str] = Field(None, description="Path to the generated audio file")
+    error: Optional[str] = Field(None, description="Error message if synthesis failed")
+    engine: str = Field(..., description="TTS engine used")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "audio_path": "/api/v1/chat/tts/audio/cache_voice.wav",
+                "engine": "vits"
+            }
+        }

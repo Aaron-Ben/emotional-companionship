@@ -981,3 +981,42 @@ body {
     left: -16px;
   }
 }
+
+/* TTS 播放按钮 */
+.tts-play-btn {
+  background: var(--anime-pink-light);
+  border: 2px solid var(--anime-pink);
+  border-radius: var(--border-radius-sm);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tts-play-btn:hover:not(:disabled) {
+  background: var(--anime-pink);
+  transform: scale(1.05);
+}
+
+.tts-play-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.tts-play-btn.playing {
+  animation: pulse 1s ease-in-out infinite;
+  background: var(--anime-purple);
+  border-color: var(--anime-purple-dark);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}

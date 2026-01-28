@@ -16,6 +16,7 @@ interface RPGChatPanelProps {
   placeholder?: string;
   onVoiceInputStart?: () => void;
   onVoiceInputEnd?: () => void;
+  onPlayTTS?: (text: string) => Promise<void>;
 }
 
 export const RPGChatPanel: React.FC<RPGChatPanelProps> = ({
@@ -29,6 +30,7 @@ export const RPGChatPanel: React.FC<RPGChatPanelProps> = ({
   placeholder = '输入你想说的话...',
   onVoiceInputStart,
   onVoiceInputEnd,
+  onPlayTTS,
 }) => {
   const showAIResponse = phase === 'ai_reply' || phase === 'completed';
   const showSendButton = phase === 'user_input';
@@ -55,6 +57,7 @@ export const RPGChatPanel: React.FC<RPGChatPanelProps> = ({
           content={aiResponse}
           isStreaming={isStreaming}
           visible={showAIResponse}
+          onPlayTTS={onPlayTTS}
         />
 
         {/* Loading status */}

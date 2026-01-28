@@ -20,8 +20,20 @@ async def lifespan(app: FastAPI):
     # 启动时初始化
     init_db()
     print("Database initialized successfully")
+
+    # 检查 TTS 模型是否可用
+    import os
+    from pathlib import Path
+    tts_model_path = Path(__file__).parent / "model/TTS/vits-zh-hf-bronya"
+    if tts_model_path.exists() and (tts_model_path / "bronya.onnx").exists():
+        print(f"TTS model found at {tts_model_path}")
+    else:
+        print(f"TTS model not found at {tts_model_path}, TTS will use pyttsx3 fallback")
+
     yield
     # 关闭时的清理工作（如果需要）
+    from app.characters.tts import cleanup
+    cleanup()
     print("Application shutting down")
 
 

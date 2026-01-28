@@ -1,7 +1,8 @@
 /** Custom hook for chat functionality */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { sendMessage, sendMessageStream, getChatStarter } from '../services/chatService';
+import { speakText } from '../services/ttsService';
 import type { DisplayMessage, ChatRequest, Message, CurrentTurn } from '../types/chat';
 
 const DEFAULT_CHARACTER_ID = 'sister_001';
@@ -280,6 +281,48 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
     });
   }, []);
 
+  // TTS: Play TTS for given text
+  const playTTS = useCallback(async (text: string) => {
+    try {
+      await speakText(text, 'vits', characterId);
+    } catch (err) {
+      console.error('TTS playback failed:', err);
+    }
+  }, [characterId]);
+
+  // TTS auto-play state and effect
+  const [autoPlayTTS, setAutoPlayTTS] = useState(() => {
+    // Load from localStorage
+    try {
+      const stored = localStorage.getItem('autoplay_tts');
+      return stored === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Effect to auto-play TTS when AI response completes
+  useEffect(() => {
+    if (
+      autoPlayTTS &&
+      currentTurn.phase === 'completed' &&
+      currentTurn.aiMessage &&
+      !loading
+    ) {
+      playTTS(currentTurn.aiMessage);
+    }
+  }, [autoPlayTTS, currentTurn.phase, currentTurn.aiMessage, loading, playTTS]);
+
+  // Toggle auto-play TTS
+  const toggleAutoPlayTTS = useCallback((enabled: boolean) => {
+    setAutoPlayTTS(enabled);
+    try {
+      localStorage.setItem('autoplay_tts', String(enabled));
+    } catch (err) {
+      console.error('Failed to save TTS preference:', err);
+    }
+  }, []);
+
   return {
     messages,
     loading,
@@ -293,5 +336,9 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
     currentTurn,
     submitUserMessage,
     startNewTurn,
+    // TTS
+    autoPlayTTS,
+    toggleAutoPlayTTS,
+    playTTS,
   };
 }

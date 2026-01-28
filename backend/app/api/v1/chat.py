@@ -14,7 +14,7 @@ from app.services.chat_service import ChatService
 from app.services.diary import DiaryCoreService
 from app.services.temporal import TimeExtractor, EventRetriever
 from app.models.character import UserCharacterPreference
-from app.schemas.message import ChatRequest, ChatResponse, VoiceResponse
+from app.schemas.message import ChatRequest, ChatResponse, VoiceResponse, TTSRequest, TTSResponse
 
 # Create router
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
@@ -609,3 +609,131 @@ async def voice_chat(
     except Exception as e:
         logger.error(f"Error in voice_chat: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing voice chat: {str(e)}")
+
+
+@router.post("/tts", response_model=TTSResponse)
+async def text_to_speech(
+    request: TTSRequest,
+):
+    """
+    Convert text to speech using local TTS models.
+
+    This endpoint supports two TTS engines:
+    - vits: High-quality VITS model (sherpa-onnx)
+    - pyttsx3: System built-in TTS
+
+    Request Body:
+    - text: Text to synthesize (required)
+    - engine: TTS engine to use, "vits" or "pyttsx3" (default: "vits")
+    - character_id: Character ID (for future voice selection) (default: "sister_001")
+
+    Returns:
+        Audio file path that can be retrieved via /api/v1/chat/tts/audio/{filename}
+
+    Example:
+    ```json
+    {
+        "text": "你好，哥哥！",
+        "engine": "vits",
+        "character_id": "sister_001"
+    }
+    ```
+    """
+    import os
+    import uuid
+
+    try:
+        # Import TTS module
+        from app.characters.tts import synthesize, VITS_MODEL_PATH, VOICE_CACHE_PATH
+
+        # Check if model is configured (for VITS)
+        if request.engine == "vits":
+            if VITS_MODEL_PATH is None or not os.path.exists(VITS_MODEL_PATH):
+                return TTSResponse(
+                    success=False,
+                    audio_path=None,
+                    error=f"VITS model not found at {VITS_MODEL_PATH}. Please download the model first.",
+                    engine=request.engine
+                )
+
+        # Generate unique filename for this request
+        os.makedirs(os.path.dirname(VOICE_CACHE_PATH), exist_ok=True)
+        filename = f"tts_{uuid.uuid4().hex[:8]}.wav"
+        output_path = os.path.join(os.path.dirname(VOICE_CACHE_PATH), filename)
+
+        # Synthesize speech
+        result_path = synthesize(
+            text=request.text,
+            engine=request.engine,
+            output_path=output_path,
+            split_sentences=False
+        )
+
+        # Check if synthesis was successful
+        if result_path and os.path.exists(result_path):
+            return TTSResponse(
+                success=True,
+                audio_path=f"/api/v1/chat/tts/audio/{filename}",
+                engine=request.engine
+            )
+        else:
+            return TTSResponse(
+                success=False,
+                audio_path=None,
+                error="Speech synthesis failed - no audio file generated",
+                engine=request.engine
+            )
+
+    except RuntimeError as e:
+        # Model or dependency error
+        return TTSResponse(
+            success=False,
+            audio_path=None,
+            error=str(e),
+            engine=request.engine
+        )
+    except ValueError as e:
+        # Invalid engine parameter
+        return TTSResponse(
+            success=False,
+            audio_path=None,
+            error=str(e),
+            engine=request.engine
+        )
+    except Exception as e:
+        logger.error(f"Error in text_to_speech: {e}")
+        raise HTTPException(status_code=500, detail=f"Error synthesizing speech: {str(e)}")
+
+
+@router.get("/tts/audio/{filename}")
+async def get_tts_audio(filename: str):
+    """
+    Retrieve a generated TTS audio file.
+
+    Path Parameters:
+    - filename: Name of the audio file (e.g., "tts_abc12345.wav")
+
+    Returns:
+        Audio file in WAV format
+    """
+    import os
+    from fastapi.responses import FileResponse
+    from app.characters.tts import VOICE_CACHE_PATH
+
+    # Security check: ensure filename is safe
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    # Construct full path
+    file_path = os.path.join(os.path.dirname(VOICE_CACHE_PATH), filename)
+
+    # Check if file exists
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Audio file not found")
+
+    # Return file
+    return FileResponse(
+        path=file_path,
+        media_type="audio/wav",
+        filename=filename
+    )

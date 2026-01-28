@@ -84,3 +84,17 @@ export interface VoiceChatOptions extends VoiceInputOptions {
 }
 
 export type RecordingState = 'idle' | 'recording' | 'processing';
+
+// TTS types
+export interface TTSRequest {
+  text: string;
+  engine?: 'vits' | 'pyttsx3';
+  character_id?: string;
+}
+
+export interface TTSResponse {
+  success: boolean;
+  audio_path?: string;
+  error?: string;
+  engine: string;
+}

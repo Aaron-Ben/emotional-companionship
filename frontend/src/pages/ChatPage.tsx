@@ -35,6 +35,9 @@ export const ChatPage: React.FC = () => {
     startNewTurn,
     clearHistory,
     messages,
+    autoPlayTTS,
+    toggleAutoPlayTTS,
+    playTTS,
   } = useChat('sister_001');
 
   const handleSend = () => {
@@ -97,7 +100,26 @@ export const ChatPage: React.FC = () => {
         placeholder="和妹妹聊聊天吧～"
         onVoiceInputStart={handleVoiceInputStart}
         onVoiceInputEnd={handleVoiceInputEnd}
+        onPlayTTS={playTTS}
       />
+
+      {/* TTS Toggle */}
+      <div className="fixed bottom-4 left-4 z-50">
+        <button
+          onClick={() => toggleAutoPlayTTS(!autoPlayTTS)}
+          className={`px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 transition-all ${
+            autoPlayTTS
+              ? 'bg-purple-600 text-white'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+          }`}
+          title={autoPlayTTS ? '关闭自动播放' : '开启自动播放'}
+        >
+          <span>{autoPlayTTS ? '🔊' : '🔇'}</span>
+          <span className="text-sm font-medium">
+            {autoPlayTTS ? '语音开启' : '语音关闭'}
+          </span>
+        </button>
+      </div>
 
       {/* Floating Buttons */}
       <FloatingActionButton
