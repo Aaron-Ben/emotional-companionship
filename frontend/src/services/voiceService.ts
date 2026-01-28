@@ -6,8 +6,6 @@ import { API_ENDPOINTS } from './api';
 
 export interface VoiceInputOptions {
   characterId?: string;
-  enableVoiceprint?: boolean;
-  voiceprintThreshold?: number;
 }
 
 export interface VoiceRecognitionResult {
@@ -237,8 +235,6 @@ export async function recognizeAudio(
   const formData = new FormData();
   formData.append('audio', audioBlob, 'audio.wav');
   formData.append('character_id', options.characterId || 'sister_001');
-  formData.append('enable_voiceprint', String(options.enableVoiceprint || false));
-  formData.append('voiceprint_threshold', String(options.voiceprintThreshold || 0.85));
 
   try {
     const response = await fetch(API_ENDPOINTS.voiceInput(), {

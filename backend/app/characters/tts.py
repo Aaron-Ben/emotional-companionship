@@ -14,7 +14,7 @@ from typing import Optional
 # 模块所在目录的父目录（backend）
 _MODULE_DIR = Path(__file__).parent.parent.parent
 # 模型路径配置（相对于 backend 目录）
-VITS_MODEL_PATH: Optional[str] = str(_MODULE_DIR / "model/TTS/vits-zh-hf-bronya")
+VITS_MODEL_PATH: Optional[str] = str(_MODULE_DIR / "model/TTS/vits-zh-hf-keqing")
 
 # 音频配置
 SAMPLE_RATE = 22050

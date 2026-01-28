@@ -397,8 +397,6 @@ async def get_conversation_starter(
 async def voice_input(
     audio: UploadFile = File(..., description="Audio file (WAV format, 16kHz, mono)"),
     character_id: str = Form(default="sister_001", description="Character to chat with"),
-    enable_voiceprint: bool = Form(default=False, description="Whether to enable speaker verification"),
-    voiceprint_threshold: float = Form(default=0.85, description="Speaker verification threshold"),
 ):
     """
     Process voice input and return recognized text.
@@ -409,8 +407,6 @@ async def voice_input(
     Request:
     - audio: WAV audio file (16kHz, mono, 16-bit)
     - character_id: Character to chat with (default: "sister_001")
-    - enable_voiceprint: Whether to enable speaker verification (default: false)
-    - voiceprint_threshold: Speaker verification threshold 0.0-1.0 (default: 0.85)
 
     Returns:
         Recognized text with optional emotion and event markers
@@ -449,11 +445,7 @@ async def voice_input(
             )
 
         # Perform recognition
-        result = recognize_audio(
-            audio_data=audio_data,
-            enable_voiceprint=enable_voiceprint,
-            voiceprint_threshold=voiceprint_threshold
-        )
+        result = recognize_audio(audio_data=audio_data)
 
         # Parse result to extract emotion and event
         text = result
@@ -540,9 +532,7 @@ async def voice_chat(
         # First, perform voice recognition
         voice_response = await voice_input(
             audio=audio,
-            character_id=character_id,
-            enable_voiceprint=False,
-            voiceprint_threshold=0.85
+            character_id=character_id
         )
 
         if not voice_response.success:

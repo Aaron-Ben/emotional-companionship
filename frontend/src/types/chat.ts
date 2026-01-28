@@ -66,8 +66,6 @@ export interface CurrentTurn {
 // Voice input types
 export interface VoiceInputOptions {
   characterId?: string;
-  enableVoiceprint?: boolean;
-  voiceprintThreshold?: number;
 }
 
 export interface VoiceRecognitionResult {

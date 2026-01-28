@@ -1,7 +1,7 @@
 """
 语音识别模块
 
-基于 sherpa-onnx 的语音识别和声纹识别功能。
+基于 sherpa-onnx 的语音识别功能。
 支持中英日韩粤语音识别，以及情感和事件检测。
 """
 
@@ -9,14 +9,13 @@ import json
 import os
 import wave
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 import numpy as np
 
 # 模块所在目录的父目录（backend）
 _MODULE_DIR = Path(__file__).parent.parent.parent
 # 模型路径配置（相对于 backend 目录）
 ASR_MODEL_PATH: Optional[str] = str(_MODULE_DIR / "model/ASR/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17")
-VP_MODEL_PATH: Optional[str] = str(_MODULE_DIR / "model/SpeakerID/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx")
 
 # 音频配置
 FORMAT = "paInt16"  # PyAudio 格式（实际使用时需导入 pyaudio）
@@ -36,9 +35,6 @@ CACHE_PATH = "data/cache/cache_record.wav"
 _pyaudio_instance = None
 _stream = None
 _recognizer = None
-_vp_extractor = None
-_vp_config = None
-_reference_embedding = None
 
 
 def rms(data: bytes) -> float:
@@ -110,87 +106,7 @@ def record_audio(
     return b''.join(frames)
 
 
-def verify_speakers(
-    reference_audio_path: str,
-    target_audio_path: str,
-    threshold: float = 0.85
-) -> Tuple[bool, float]:
-    """
-    声纹识别，验证两个音频是否为同一说话人。
-
-    Args:
-        reference_audio_path: 参考音频文件路径（已注册的声纹）
-        target_audio_path: 待验证音频文件路径
-        threshold: 相似度阈值，默认 0.85
-
-    Returns:
-        (is_same_speaker, similarity): 是否为同一说话人及相似度分数
-
-    Raises:
-        RuntimeError: 当声纹模型未配置时
-    """
-    global _vp_extractor, _vp_config, _reference_embedding
-
-    if VP_MODEL_PATH is None:
-        raise RuntimeError("声纹模型未配置，请设置 VP_MODEL_PATH")
-
-    try:
-        import sherpa_onnx
-        import soundfile as sf
-    except ImportError:
-        raise RuntimeError(" sherpa-onnx 或 soundfile 未安装，请先安装")
-
-    def load_audio(filename: str) -> Tuple[np.ndarray, int]:
-        """加载音频文件"""
-        audio, sample_rate = sf.read(filename, dtype="float32", always_2d=True)
-        audio = audio[:, 0]
-        return audio, sample_rate
-
-    def extract_speaker_embedding(audio: np.ndarray, sample_rate: int) -> np.ndarray:
-        """提取说话人嵌入向量"""
-        if _vp_config is None:
-            _vp_config = sherpa_onnx.SpeakerEmbeddingExtractorConfig(
-                model=VP_MODEL_PATH,
-                debug=False,
-                provider="cpu",
-                num_threads=max(1, int(os.cpu_count()) - 1)
-            )
-            _vp_extractor = sherpa_onnx.SpeakerEmbeddingExtractor(_vp_config)
-
-        vp_stream = _vp_extractor.create_stream()
-        vp_stream.accept_waveform(sample_rate=sample_rate, waveform=audio)
-        vp_stream.input_finished()
-        embedding = _vp_extractor.compute(vp_stream)
-        return np.array(embedding)
-
-    def cosine_similarity(embedding1: np.ndarray, embedding2: np.ndarray) -> float:
-        """计算余弦相似度"""
-        dot_product = np.dot(embedding1, embedding2)
-        norm1 = np.linalg.norm(embedding1)
-        norm2 = np.linalg.norm(embedding2)
-        return dot_product / (norm1 * norm2) if (norm1 * norm2) != 0 else 0.0
-
-    # 加载并提取参考音频嵌入
-    if _reference_embedding is None:
-        audio1, sample_rate1 = load_audio(reference_audio_path)
-        _reference_embedding = extract_speaker_embedding(audio1, sample_rate1)
-
-    # 加载并提取目标音频嵌入
-    audio2, sample_rate2 = load_audio(target_audio_path)
-    embedding2 = extract_speaker_embedding(audio2, sample_rate2)
-
-    # 计算相似度
-    similarity = cosine_similarity(_reference_embedding, embedding2)
-
-    return similarity >= threshold, similarity
-
-
-def recognize_audio(
-    audio_data: bytes,
-    enable_voiceprint: bool = False,
-    voiceprint_threshold: float = 0.85,
-    reference_audio_path: Optional[str] = None
-) -> str:
+def recognize_audio(audio_data: bytes) -> str:
     """
     语音识别，将音频转换为文本。
 
@@ -199,9 +115,6 @@ def recognize_audio(
 
     Args:
         audio_data: 音频数据的字节流
-        enable_voiceprint: 是否启用声纹验证
-        voiceprint_threshold: 声纹验证阈值
-        reference_audio_path: 参考音频路径（声纹验证时使用）
 
     Returns:
         识别结果文本，包含情感和事件标记
@@ -235,12 +148,6 @@ def recognize_audio(
 
     if duration < SILENCE_DURATION + 0.5:
         return ""
-
-    # 声纹验证
-    if enable_voiceprint and reference_audio_path:
-        is_verified, _ = verify_speakers(reference_audio_path, CACHE_PATH, voiceprint_threshold)
-        if not is_verified:
-            return ""
 
     # 初始化识别器
     if _recognizer is None:
@@ -300,23 +207,21 @@ def recognize_audio(
     return result_text
 
 
-def configure_models(asr_model_path: str, vp_model_path: Optional[str] = None) -> None:
+def configure_models(asr_model_path: str) -> None:
     """
-    配置语音识别和声纹识别模型路径。
+    配置语音识别模型路径。
 
     Args:
         asr_model_path: Sherpa-ONNX SenseVoice 模型目录路径
-        vp_model_path: 声纹识别模型文件路径（可选）
     """
-    global ASR_MODEL_PATH, VP_MODEL_PATH
+    global ASR_MODEL_PATH
 
     ASR_MODEL_PATH = asr_model_path
-    VP_MODEL_PATH = vp_model_path
 
 
 def cleanup() -> None:
     """清理资源，关闭音频流。"""
-    global _pyaudio_instance, _stream, _recognizer, _vp_extractor
+    global _pyaudio_instance, _stream, _recognizer
 
     if _stream:
         try:
@@ -333,4 +238,3 @@ def cleanup() -> None:
         _pyaudio_instance = None
 
     _recognizer = None
-    _vp_extractor = None
