@@ -7,8 +7,13 @@
 
 import os
 import re
+import time
+import logging
 from pathlib import Path
 from typing import Optional
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 # 模块所在目录的父目录（backend）
 _MODULE_DIR = Path(__file__).parent.parent.parent
@@ -149,6 +154,9 @@ def synthesize(
         )
 
     # 执行合成
+    logger.info(f"开始语音合成 - 角色: {character_name}, 文本长度: {len(processed_text)} 字符")
+    start_time = time.time()
+
     try:
         genie.tts(
             character_name=character_name,
@@ -157,7 +165,11 @@ def synthesize(
             play=False
         )
     except Exception as e:
+        logger.error(f"语音合成失败: {e}")
         raise RuntimeError(f"TTS 合成失败: {e}")
+
+    elapsed_time = time.time() - start_time
+    logger.info(f"语音合成完成 - 耗时: {elapsed_time:.2f} 秒, 输出: {output_path}")
 
     return output_path
 
