@@ -12,7 +12,6 @@ import time
 import logging
 from pathlib import Path
 from typing import Optional
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -22,92 +21,14 @@ _MODULE_DIR = Path(__file__).parent.parent.parent
 ASR_MODEL_PATH: Optional[str] = str(_MODULE_DIR / "model/ASR/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17")
 
 # 音频配置
-FORMAT = "paInt16"  # PyAudio 格式（实际使用时需导入 pyaudio）
 CHANNELS = 1
 RATE = 16000
-CHUNK = 1024
-
-# 灵敏度配置
-SILENCE_DURATION_MAP = {"高": 1, "中": 2, "低": 3}
-SILENCE_DURATION: int = 2  # 默认中等灵敏度
-SILENCE_CHUNKS = SILENCE_DURATION * RATE / CHUNK  # 静音持续的帧数
 
 # 缓存路径
 CACHE_PATH = "data/cache/cache_record.wav"
 
 # 全局变量（延迟初始化）
-_pyaudio_instance = None
-_stream = None
 _recognizer = None
-
-
-def rms(data: bytes) -> float:
-    """计算音频数据的均方根（Root Mean Square）"""
-    return np.sqrt(np.mean(np.frombuffer(data, dtype=np.int16) ** 2))
-
-
-def dbfs(rms_value: float) -> float:
-    """将均方根转换为分贝满量程（dBFS）"""
-    return 20 * np.log10(rms_value / (2 ** 15))  # 16位音频
-
-
-def record_audio(
-    mic_index: Optional[int] = None,
-    silence_duration: float = SILENCE_DURATION
-) -> bytes:
-    """
-    录音功能，通过检测静音自动停止录音。
-
-    Args:
-        mic_index: 麦克风设备索引，None 表示使用默认设备
-        silence_duration: 静音持续时间（秒），超过此时间后停止录音
-
-    Returns:
-        录音数据的字节流
-
-    Raises:
-        RuntimeError: 当 PyAudio 未安装或无法打开音频设备时
-    """
-    global _pyaudio_instance, _stream
-
-    try:
-        import pyaudio
-    except ImportError:
-        raise RuntimeError("PyAudio 未安装，请先安装: pip install pyaudio")
-
-    frames = []
-    recording = True
-    silence_counter = 0
-    silence_chunks = silence_duration * RATE / CHUNK
-
-    if _pyaudio_instance is None:
-        _pyaudio_instance = pyaudio.PyAudio()
-
-    if _stream is None or not _stream.is_active():
-        _stream = _pyaudio_instance.open(
-            format=pyaudio.paInt16,
-            channels=CHANNELS,
-            rate=RATE,
-            input=True,
-            frames_per_buffer=CHUNK,
-            input_device_index=mic_index
-        )
-
-    while recording:
-        data = _stream.read(CHUNK)
-        frames.append(data)
-        current_rms = rms(data)
-        current_dbfs = dbfs(current_rms)
-
-        # 检测是否为静音
-        if not np.isnan(current_dbfs) and current_dbfs < -40:  # -40dBFS 作为静音阈值
-            silence_counter += 1
-            if silence_counter > silence_chunks:
-                recording = False
-        else:
-            silence_counter = 0
-
-    return b''.join(frames)
 
 
 def recognize_audio(audio_data: bytes) -> str:
@@ -157,8 +78,9 @@ def recognize_audio(audio_data: bytes) -> str:
 
     logger.info(f"[ASR] 写入文件: {write_time:.0f}ms, 检查时长: {check_time:.0f}ms, 音频时长: {duration:.1f}s")
 
-    if duration < SILENCE_DURATION + 0.5:
-        logger.info(f"[ASR] 音频太短，跳过识别")
+    # 降低最小时长限制，支持短语识别
+    if duration < 0.3:
+        logger.info(f"[ASR] 音频太短（<0.3s），跳过识别")
         return ""
 
     # 初始化识别器
@@ -234,27 +156,13 @@ def configure_models(asr_model_path: str) -> None:
     Args:
         asr_model_path: Sherpa-ONNX SenseVoice 模型目录路径
     """
-    global ASR_MODEL_PATH
+    global ASR_MODEL_PATH, _recognizer
 
     ASR_MODEL_PATH = asr_model_path
+    _recognizer = None  # 重置识别器以使用新模型
 
 
 def cleanup() -> None:
-    """清理资源，关闭音频流。"""
-    global _pyaudio_instance, _stream, _recognizer
-
-    if _stream:
-        try:
-            _stream.close()
-        except Exception:
-            pass
-        _stream = None
-
-    if _pyaudio_instance:
-        try:
-            _pyaudio_instance.terminate()
-        except Exception:
-            pass
-        _pyaudio_instance = None
-
+    """清理资源。"""
+    global _recognizer
     _recognizer = None
