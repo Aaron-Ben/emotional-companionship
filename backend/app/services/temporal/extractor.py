@@ -5,7 +5,7 @@ import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-from app.services.llms.base import LLMBase
+from app.services.llm import LLM
 from app.services.temporal.models import (
     FutureEvent,
     ExtractTimelineRequest,
@@ -24,7 +24,7 @@ class TimeExtractor:
     Combines LLM understanding with rule-based normalization.
     """
 
-    def __init__(self, llm: LLMBase):
+    def __init__(self, llm: LLM):
         """
         Initialize time extractor.
 

@@ -1,7 +1,7 @@
 /** Diary detail modal component */
 
 import React from 'react';
-import { DiaryEntry } from '../../services/diaryService';
+import { DiaryEntry, extractDateFromPath } from '../../services/diaryService';
 
 interface DiaryDetailModalProps {
   diary: DiaryEntry | null;
@@ -16,7 +16,8 @@ export const DiaryDetailModal: React.FC<DiaryDetailModalProps> = ({
 }) => {
   if (!isOpen || !diary) return null;
 
-  const dateObj = new Date(diary.date);
+  // Extract date from path
+  const date = extractDateFromPath(diary.path);
 
   return (
     <div
@@ -36,7 +37,7 @@ export const DiaryDetailModal: React.FC<DiaryDetailModalProps> = ({
                 <h2 className="text-2xl font-bold text-gray-800">妹妹的日记</h2>
               </div>
               <p className="text-sm text-gray-600">
-                {dateObj.toLocaleDateString('zh-CN', {
+                {date.toLocaleDateString('zh-CN', {
                   year: 'numeric',
                   month: 'long',
                   day: 'numeric',
@@ -64,30 +65,11 @@ export const DiaryDetailModal: React.FC<DiaryDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Tags */}
-          {diary.tags.length > 0 && (
-            <div className="mb-6 pt-4 border-t border-pink-100">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                <span>🏷️</span>
-                <span>标签</span>
-              </h3>
-              <div className="flex gap-2 flex-wrap">
-                {diary.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-3 py-1.5 bg-gradient-to-r from-pink-50 to-purple-50 text-pink-600 rounded-full text-sm font-medium border border-pink-200"
-                  >
-                    #{tag}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Metadata */}
           <div className="pt-4 border-t border-gray-200 text-xs text-gray-500 space-y-1">
-            <p>分类: {diary.category}</p>
-            <p>创建时间: {new Date(diary.created_at).toLocaleString('zh-CN')}</p>
+            <p>日记本: {diary.diary_name}</p>
+            <p>文件路径: {diary.path}</p>
+            <p>修改时间: {new Date(diary.mtime * 1000).toLocaleString('zh-CN')}</p>
           </div>
         </div>
       </div>

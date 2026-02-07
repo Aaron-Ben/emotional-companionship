@@ -1,15 +1,10 @@
 /** Diary service for managing character diary entries */
 
 export interface DiaryEntry {
-  id: string;
-  character_id: string;
-  user_id: string;
-  date: string;
-  content: string;
-  category: string;
-  tags: string[];
-  created_at: string;
-  updated_at?: string;
+  path: string;           // 文件相对路径，例如 "sister_001/2025-01-23_143052.txt"
+  diary_name: string;     // 日记本名称（文件夹名），例如 "sister_001"
+  content: string;        // 日记内容（包含末尾的 Tag 行）
+  mtime: number;          // 文件修改时间戳
 }
 
 /** Diary group by month for timeline display */
@@ -27,8 +22,13 @@ export type DiaryGroupMap = Record<string, DiaryEntry[]>;
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-export async function listDiaries(characterId: string = 'sister_001', limit: number = 10): Promise<DiaryEntry[]> {
-  const response = await fetch(`${API_BASE}/api/v1/diary/list?character_id=${characterId}&limit=${limit}`);
+/**
+ * 获取日记列表
+ * @param diaryName - 日记本名称（文件夹名）
+ * @param limit - 返回数量限制
+ */
+export async function listDiaries(diaryName: string = 'sister_001', limit: number = 10): Promise<DiaryEntry[]> {
+  const response = await fetch(`${API_BASE}/api/v1/diary/list?diary_name=${diaryName}&limit=${limit}`);
 
   if (!response.ok) {
     throw new Error(`Failed to list diaries: ${response.statusText}`);
@@ -37,8 +37,12 @@ export async function listDiaries(characterId: string = 'sister_001', limit: num
   return response.json();
 }
 
-export async function getLatestDiary(characterId: string = 'sister_001'): Promise<DiaryEntry | null> {
-  const response = await fetch(`${API_BASE}/api/v1/diary/latest?character_id=${characterId}`);
+/**
+ * 获取最新日记
+ * @param diaryName - 日记本名称（文件夹名）
+ */
+export async function getLatestDiary(diaryName: string = 'sister_001'): Promise<DiaryEntry | null> {
+  const response = await fetch(`${API_BASE}/api/v1/diary/latest?diary_name=${diaryName}`);
 
   if (!response.ok) {
     throw new Error(`Failed to get latest diary: ${response.statusText}`);
@@ -47,8 +51,12 @@ export async function getLatestDiary(characterId: string = 'sister_001'): Promis
   return response.json();
 }
 
-export async function getDiaryById(diaryId: string): Promise<DiaryEntry> {
-  const response = await fetch(`${API_BASE}/api/v1/diary/${diaryId}`);
+/**
+ * 根据路径获取日记详情
+ * @param path - 文件相对路径，例如 "sister_001/2025-01-23_143052.txt"
+ */
+export async function getDiaryByPath(path: string): Promise<DiaryEntry> {
+  const response = await fetch(`${API_BASE}/api/v1/diary/${path}`);
 
   if (!response.ok) {
     throw new Error(`Failed to get diary: ${response.statusText}`);
@@ -57,46 +65,70 @@ export async function getDiaryById(diaryId: string): Promise<DiaryEntry> {
   return response.json();
 }
 
-export async function generateDiary(data: {
-  character_id: string;
-  conversation_summary: string;
-  trigger_type: string;
-}): Promise<{ diary: DiaryEntry; message: string }> {
-  const response = await fetch(`${API_BASE}/api/v1/diary/generate`, {
+/**
+ * 创建日记
+ */
+export async function createDiary(data: {
+  diary_name: string;
+  date: string;
+  content: string;
+  tag?: string;
+}): Promise<{ message: string; diary: DiaryEntry }> {
+  const response = await fetch(`${API_BASE}/api/v1/diary/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to generate diary: ${response.statusText}`);
+    throw new Error(`Failed to create diary: ${response.statusText}`);
   }
 
   return response.json();
 }
 
+/**
+ * 更新日记内容
+ * @param path - 文件相对路径
+ * @param content - 新的日记内容（包含 Tag 行）
+ */
 export async function updateDiary(
-  diaryId: string,
-  data: {
-    content: string;
-    tags: string[];
-  }
-): Promise<{ diary: DiaryEntry; message: string }> {
-  const response = await fetch(`${API_BASE}/api/v1/diary/${diaryId}`, {
-    method: 'PUT',
+  path: string,
+  content: string
+): Promise<{ message: string; diary: DiaryEntry }> {
+  // 根据路径读取当前内容，然后使用 AI 更新
+  const currentDiary = await getDiaryByPath(path);
+
+  // 使用 AI 更新接口
+  const response = await fetch(`${API_BASE}/api/v1/diary/ai-update`, {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
+    body: JSON.stringify({
+      target: currentDiary.content,
+      replace: content,
+      diary_name: currentDiary.diary_name
+    }),
   });
 
   if (!response.ok) {
     throw new Error(`Failed to update diary: ${response.statusText}`);
   }
 
-  return response.json();
+  const result = await response.json();
+
+  // 返回更新后的日记
+  return {
+    message: result.message,
+    diary: await getDiaryByPath(result.path)
+  };
 }
 
-export async function deleteDiary(diaryId: string): Promise<{ message: string; diary_id: string }> {
-  const response = await fetch(`${API_BASE}/api/v1/diary/${diaryId}`, {
+/**
+ * 删除日记
+ * @param path - 文件相对路径
+ */
+export async function deleteDiary(path: string): Promise<{ message: string; path: string }> {
+  const response = await fetch(`${API_BASE}/api/v1/diary/${path}`, {
     method: 'DELETE',
   });
 
@@ -108,6 +140,47 @@ export async function deleteDiary(diaryId: string): Promise<{ message: string; d
 }
 
 /**
+ * 获取所有日记本名称列表
+ */
+export async function listDiaryNames(): Promise<{ names: string[] }> {
+  const response = await fetch(`${API_BASE}/api/v1/diary/names`);
+
+  if (!response.ok) {
+    throw new Error(`Failed to list diary names: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * 从文件路径提取日期
+ * @param path - 文件路径，例如 "sister_001/2025-01-23_143052.txt" 或 "sister_001/2025-01-24-02_34_37.txt"
+ */
+export function extractDateFromPath(path: string): Date {
+  const filename = path.split('/').pop() || '';
+  // Remove .txt extension
+  const nameWithoutExt = filename.replace('.txt', '');
+
+  // Try different formats:
+  // 1. "2025-01-24-02_34_37" -> extract "2025-01-24"
+  // 2. "2025-01-23_143052" -> extract "2025-01-23"
+  let datePart = nameWithoutExt.split('_')[0]; // "2025-01-24-02" or "2025-01-23"
+
+  // If date part contains extra time segment (format 1), remove it
+  if (datePart.split('-').length > 3) {
+    const parts = datePart.split('-');
+    datePart = `${parts[0]}-${parts[1]}-${parts[2]}`; // Keep only YYYY-MM-DD
+  }
+
+  const date = new Date(datePart);
+  if (isNaN(date.getTime())) {
+    // If still invalid, return current date
+    return new Date();
+  }
+  return date;
+}
+
+/**
  * Group diaries by month for timeline display
  * @param diaries - Array of diary entries to group
  * @returns Array of diary groups sorted by date (newest first)
@@ -116,7 +189,7 @@ export function groupDiariesByMonth(diaries: DiaryEntry[]): DiaryGroup[] {
   const groupMap: DiaryGroupMap = {};
 
   diaries.forEach((diary) => {
-    const date = new Date(diary.date);
+    const date = extractDateFromPath(diary.path);
     const year = date.getFullYear();
     const month = date.getMonth() + 1; // 1-12
     const key = `${year}-${month}`;

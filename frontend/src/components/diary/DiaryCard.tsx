@@ -1,7 +1,7 @@
 /** Diary card component for displaying a single diary entry */
 
 import React from 'react';
-import { DiaryEntry } from '../../services/diaryService';
+import { DiaryEntry, extractDateFromPath } from '../../services/diaryService';
 
 interface DiaryCardProps {
   diary: DiaryEntry;
@@ -16,6 +16,20 @@ export const DiaryCard: React.FC<DiaryCardProps> = ({
   onEdit,
   onDelete,
 }) => {
+  // Extract date from path for display
+  const date = extractDateFromPath(diary.path);
+  const dateStr = date.toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
+  // Extract tag from content
+  const tagMatch = diary.content.match(/Tag:\s*(.+)$/m);
+  const displayContent = tagMatch
+    ? diary.content.replace(/Tag:\s*(.+)$/m, '').trim()
+    : diary.content;
+
   return (
     <div
       className="diary-card bg-gradient-to-r from-pink-50 to-purple-50 rounded-xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer border border-pink-100 relative group"
@@ -43,35 +57,19 @@ export const DiaryCard: React.FC<DiaryCardProps> = ({
       <div className="flex justify-between items-start mb-3 pr-16">
         <h3 className="font-bold text-gray-800 text-lg flex items-center gap-2">
           <span className="text-2xl">📔</span>
-          {diary.date}
+          {dateStr}
         </h3>
         <div className="flex gap-2 flex-wrap">
-          {diary.category && (
-            <span className="text-xs px-2 py-1 bg-purple-200 text-purple-700 rounded-full font-medium">
-              {diary.category}
-            </span>
-          )}
+          <span className="text-xs px-2 py-1 bg-pink-200 text-pink-700 rounded-full font-medium">
+            {diary.diary_name}
+          </span>
         </div>
       </div>
 
       {/* Content preview */}
       <p className="text-gray-700 text-sm leading-relaxed line-clamp-3 whitespace-pre-wrap">
-        {diary.content}
+        {displayContent}
       </p>
-
-      {/* Tags */}
-      {diary.tags.length > 0 && (
-        <div className="mt-3 flex gap-2 flex-wrap">
-          {diary.tags.map((tag) => (
-            <span
-              key={tag}
-              className="text-xs px-2 py-1 bg-white text-pink-600 rounded border border-pink-200"
-            >
-              #{tag}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   );
 };

@@ -274,20 +274,6 @@ class CharacterService:
         modified_prompt = base_prompt
         context_instructions = []
 
-        # Check if user is angry/distressed
-        user_mood = context.get("user_mood")
-        if user_mood and user_mood.get("primary_emotion") in ["angry", "frustrated", "very_sad"]:
-            context_instructions.append("""
-            ## 重要：用户需要额外支持
-
-            用户现在很心烦。你应该：
-            - 格外温柔和支持
-            - 不要争辩或表达不同意
-            - 将情感舒适放在首位
-            - 展现共情和理解
-            - 避免玩闹式的调侃或吃醋
-            """)
-
         # Check if arguments should be avoided
         if context.get("should_avoid_argument", False):
             context_instructions.append("""

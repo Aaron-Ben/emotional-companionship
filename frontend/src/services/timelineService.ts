@@ -148,7 +148,16 @@ export function convertApiResponseToTimelineDays(
  * Format date for display (1月26日 周一)
  */
 export function formatDisplayDate(dateStr: string): string {
+  if (!dateStr) return '未知日期';
+
+  // Handle YYYY-MM-DD and YYYY-MM-DD HH:MM formats
   const date = new Date(dateStr);
+
+  // Check if date is valid
+  if (isNaN(date.getTime())) {
+    return dateStr; // Return original string if invalid
+  }
+
   const month = date.getMonth() + 1;
   const day = date.getDate();
   const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];

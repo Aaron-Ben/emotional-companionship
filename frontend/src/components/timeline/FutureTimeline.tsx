@@ -139,16 +139,6 @@ export const FutureTimeline: React.FC<FutureTimelineProps> = ({
     });
   };
 
-  // 格式化日期显示
-  const formatDisplayDate = (dateStr: string): string => {
-    const date = new Date(dateStr);
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-    const weekday = weekdays[date.getDay()];
-    return `${month}月${day}日 ${weekday}`;
-  };
-
   const loadTimeline = useCallback(async () => {
     try {
       const response = await getFutureEvents({
@@ -161,7 +151,7 @@ export const FutureTimeline: React.FC<FutureTimelineProps> = ({
       const eventNodes: TimelineNode[] = [];
 
       // 遍历响应，提取所有事件
-      for (const [, eventsList] of Object.entries(response)) {
+      for (const [displayDate, eventsList] of Object.entries(response)) {
         if (eventsList.length > 0) {
           const firstEvent = eventsList[0];
 
@@ -169,7 +159,7 @@ export const FutureTimeline: React.FC<FutureTimelineProps> = ({
             eventNodes.push({
               event,
               date: firstEvent.event_date,
-              displayDate: formatDisplayDate(firstEvent.event_date),
+              displayDate: displayDate,  // Use the formatted date from backend
               x: 0,
               y: 0,
               index: 0,

@@ -7,11 +7,9 @@ from datetime import datetime
 import asyncio
 import logging
 
-from app.services.llms.qwen import QwenLLM
-from app.services.llms.deepseek import DeepSeekLLM
+from app.services.llm import LLM
 from app.services.character_service import CharacterService
 from app.services.chat_service import ChatService
-from app.services.diary import DiaryCoreService
 from app.services.temporal import TimeExtractor, EventRetriever
 from app.models.character import UserCharacterPreference
 from app.schemas.message import ChatRequest, ChatResponse, VoiceResponse, TTSRequest, TTSResponse
@@ -31,23 +29,19 @@ def get_character_service() -> CharacterService:
     return CharacterService()
 
 
-def get_llm_service() -> QwenLLM | DeepSeekLLM:
+def get_llm_service() -> LLM:
     """
     Dependency injection for LLM service.
-    Uses DeepSeek-V3 by default, can be configured via environment.
+    Uses OpenRouter by default.
 
-    Note: Requires DASHSCOPE_API_KEY or DEEPSEEK_API_KEY environment variable.
+    Note: Requires OPENROUTER_API_KEY environment variable.
     """
     import os
 
-    # Check if user wants to use Qwen via environment variable
-    llm_provider = os.getenv("LLM_PROVIDER", "deepseek").lower()
+    # Get model from environment or use default
+    model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
 
-    if llm_provider == "qwen":
-        return QwenLLM()
-
-    # Default to DeepSeek-V3
-    return DeepSeekLLM(config={"model": "deepseek-chat"})
+    return LLM(config={"model": model})
 
 
 def get_mock_user_id() -> str:
@@ -67,48 +61,151 @@ def get_user_preferences(
     return _user_preferences_store.get(key)
 
 
-def get_diary_core_service() -> DiaryCoreService:
-    """Dependency injection for DiaryCoreService."""
-    return DiaryCoreService()
-
-
 async def extract_and_save_diary(
     character_id: str,
     user_id: str,
     conversation_messages: List[Dict[str, str]],
-    llm: QwenLLM | DeepSeekLLM,
-    diary_service: DiaryCoreService
+    llm: LLM
 ):
     """
-    Extract and save diary from actual conversation (async).
+    Extract and save diary from conversation (async).
 
     This runs in the background after a response is sent.
-    The diary service internally judges whether to record based on the conversation content.
+    AI will evaluate if the conversation is worth recording and extract diary content.
+
+    Args:
+        character_id: Character ID (used as diary_name)
+        user_id: User ID
+        conversation_messages: Current conversation messages
+        llm: LLM instance for evaluation and extraction
     """
     try:
-        logger.info(f"Checking if conversation worth recording for {user_id}/{character_id}")
+        logger.info(f"Evaluating diary extraction for {user_id}/{character_id}")
 
-        diary_entry = await diary_service.generate_from_conversation(
-            llm=llm,
-            character_id=character_id,
-            user_id=user_id,
-            conversation_messages=conversation_messages,
+        # Build conversation text for evaluation
+        conversation_text = "\n".join([
+            f"{msg['role']}: {msg['content']}"
+            for msg in conversation_messages
+        ])
+
+        # Step 1: Evaluate if worth recording and what action to take
+        evaluation_prompt = f"""分析以下对话，判断应该如何处理日记。
+
+对话内容：
+{conversation_text}
+
+请只回答以下选项之一：
+- "CREATE" - 需要创建新日记（对话包含新的重要信息）
+- "UPDATE" - 需要更新已有日记（对话提到修正或补充之前的记录）
+- "SKIP" - 不需要记录（对话内容不重要）
+
+判断标准：
+1. 包含新的重要信息 → CREATE
+2. 提到修正、补充、更新之前的记录 → UPDATE
+3. 无关紧要的内容 → SKIP
+
+如果选择 UPDATE，请用格式：UPDATE | 原内容片段 | 新内容片段
+如果选择 CREATE 或 SKIP，只需返回选项本身。
+
+示例：
+- CREATE
+- UPDATE | 哥哥去了北京出差 | 哥哥去了上海出差
+- SKIP"""
+
+        evaluation = llm.generate_response([
+            {"role": "system", "content": "你是一个日记记录助手，负责判断如何处理日记。"},
+            {"role": "user", "content": evaluation_prompt}
+        ])
+
+        logger.info(f"Diary evaluation: {evaluation}")
+
+        if "SKIP" in evaluation.upper() or "跳过" in evaluation:
+            logger.info(f"Diary evaluation: skipped for {user_id}/{character_id}")
+            return
+
+        from app.services.diary.file_service import DiaryFileService
+        from datetime import datetime
+
+        diary_service = DiaryFileService()
+
+        # Step 2: Handle UPDATE case
+        if "UPDATE" in evaluation.upper():
+            # Parse evaluation to extract target and replace content
+            parts = evaluation.split("|")
+            if len(parts) == 3:
+                target = parts[1].strip()
+                replace_content = parts[2].strip()
+
+                # Use update_diary
+                result = diary_service.update_diary(
+                    target=target,
+                    replace=replace_content,
+                    diary_name=character_id
+                )
+
+                if result["status"] == "success":
+                    logger.info(f"Diary updated successfully: {result['path']}")
+                else:
+                    logger.warning(f"Diary update failed: {result['message']}")
+            else:
+                logger.warning(f"Invalid UPDATE format: {evaluation}")
+            return
+
+        # Step 3: Handle CREATE case
+        diary_prompt = f"""根据以下对话，提取日记内容。
+
+对话内容：
+{conversation_text}
+
+请按照以下格式生成日记：
+
+【对话主题】简述本次对话的核心内容
+
+【对话记录】
+哥哥：...
+我：...
+
+【关键信息】
+- 要点1
+- 要点2
+
+【我的感受】
+
+Tag: 关键词1, 关键词2, 关键词3
+
+注意：
+1. 日记要简洁，突出重点
+2. Tag 要包含3-5个关键词
+3. 只返回日记内容，不要其他解释"""
+
+        diary_content = llm.generate_response([
+            {"role": "system", "content": "你是一个日记记录助手，负责从对话中提取日记内容。"},
+            {"role": "user", "content": diary_prompt}
+        ])
+
+        # Step 4: Create new diary
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        result = diary_service.create_diary(
+            diary_name=character_id,
+            date=today,
+            content=diary_content
         )
 
-        if diary_entry:
-            logger.info(f"Diary extracted and saved for {user_id}/{character_id}: {diary_entry.category}")
+        if result["status"] == "success":
+            logger.info(f"Diary created successfully: {result['data']['path']}")
         else:
-            logger.info(f"Conversation not worth recording for {user_id}/{character_id}")
+            logger.error(f"Failed to create diary: {result['message']}")
 
     except Exception as e:
-        logger.error(f"Error extracting diary: {e}")
+        logger.error(f"Error extracting/saving diary: {e}")
 
 
 async def extract_and_save_timeline(
     character_id: str,
     user_id: str,
     conversation_messages: List[Dict[str, str]],
-    llm: QwenLLM | DeepSeekLLM
+    llm: LLM
 ):
     """
     Extract and save timeline events from conversation (async).
@@ -149,8 +246,7 @@ async def chat(
     request: ChatRequest,
     user_id: str = Depends(get_mock_user_id),
     character_service: CharacterService = Depends(get_character_service),
-    llm: QwenLLM | DeepSeekLLM = Depends(get_llm_service),
-    diary_core_service: DiaryCoreService = Depends(get_diary_core_service)
+    llm: LLM = Depends(get_llm_service)
 ):
     """
     Send a message to a character and get a response.
@@ -205,14 +301,13 @@ async def chat(
             {"role": "assistant", "content": response.message}
         ]
 
-        # Trigger async diary extraction (service will judge if worth recording)
+        # Trigger async diary extraction (AI will judge if worth recording)
         asyncio.create_task(
             extract_and_save_diary(
                 character_id=request.character_id,
                 user_id=user_id,
                 conversation_messages=conversation_messages,
-                llm=llm,
-                diary_service=diary_core_service
+                llm=llm
             )
         )
 
@@ -236,8 +331,7 @@ async def chat_stream(
     request: ChatRequest,
     user_id: str = Depends(get_mock_user_id),
     character_service: CharacterService = Depends(get_character_service),
-    llm: QwenLLM | DeepSeekLLM = Depends(get_llm_service),
-    diary_core_service: DiaryCoreService = Depends(get_diary_core_service)
+    llm: LLM = Depends(get_llm_service)
 ):
     """
     Send a message to a character and get a streaming response.
@@ -293,14 +387,16 @@ async def chat_stream(
 
             # Trigger diary generation after stream completes
             response_text = "".join(full_response)
+            conversation_messages = [
+                {"role": "user", "content": request.message},
+                {"role": "assistant", "content": response_text}
+            ]
             asyncio.create_task(
-                extract_diary_stream(
+                extract_and_save_diary(
                     character_id=request.character_id,
                     user_id=user_id,
-                    user_message=request.message,
-                    assistant_response=response_text,
-                    llm=llm,
-                    diary_core_service=diary_core_service
+                    conversation_messages=conversation_messages,
+                    llm=llm
                 )
             )
         except Exception as e:
@@ -315,82 +411,6 @@ async def chat_stream(
             "X-Accel-Buffering": "no"
         }
     )
-
-
-async def extract_diary_stream(
-    character_id: str,
-    user_id: str,
-    user_message: str,
-    assistant_response: str,
-    llm: QwenLLM | DeepSeekLLM,
-    diary_core_service: DiaryCoreService
-):
-    """
-    提取日记（用于流式端点）。
-    """
-    try:
-        # 构建当前对话 ONLY（不包括历史，避免日记内容重复）
-        # 日记应该只记录本次对话的新增内容
-        conversation_messages = [
-            {"role": "user", "content": user_message},
-            {"role": "assistant", "content": assistant_response}
-        ]
-
-        # Generate diary (service will judge if worth recording)
-        await diary_core_service.generate_from_conversation(
-            llm=llm,
-            character_id=character_id,
-            user_id=user_id,
-            conversation_messages=conversation_messages,
-        )
-
-        # Always extract timeline events
-        await extract_and_save_timeline(
-            character_id=character_id,
-            user_id=user_id,
-            conversation_messages=conversation_messages,
-            llm=llm
-        )
-
-    except Exception as e:
-        logger.error(f"Error in extract_diary_stream: {e}")
-
-
-@router.post("/starter")
-async def get_conversation_starter(
-    character_id: str = "sister_001",
-    user_id: str = Depends(get_mock_user_id),
-    character_service: CharacterService = Depends(get_character_service)
-):
-    """
-    Get a conversation starter from a character.
-
-    Query Parameters:
-    - character_id: Character to get starter from (default: "sister_001")
-
-    Returns:
-        Conversation starter message
-    """
-    # Get user preferences if available
-    user_preferences = get_user_preferences(character_id, user_id)
-
-    # Get conversation starter
-    starter = character_service.get_conversation_starter(
-        character_id=character_id,
-        user_preferences=user_preferences
-    )
-
-    if not starter:
-        raise HTTPException(
-            status_code=404,
-            detail="No conversation starter available for this character"
-        )
-
-    return {
-        "starter": starter,
-        "character_id": character_id,
-        "timestamp": datetime.now().isoformat()
-    }
 
 
 @router.post("/voice", response_model=VoiceResponse)
@@ -581,28 +601,24 @@ async def voice_chat(
             user_id = get_mock_user_id()
             character_service = get_character_service()
             llm = get_llm_service()
-            diary_core_service = get_diary_core_service()
 
             return await chat_stream(
                 request=chat_request,
                 user_id=user_id,
                 character_service=character_service,
-                llm=llm,
-                diary_core_service=diary_core_service
+                llm=llm
             )
 
         # Non-streaming: use the regular chat endpoint
         user_id = get_mock_user_id()
         character_service = get_character_service()
         llm = get_llm_service()
-        diary_core_service = get_diary_core_service()
 
         return await chat(
             request=chat_request,
             user_id=user_id,
             character_service=character_service,
-            llm=llm,
-            diary_core_service=diary_core_service
+            llm=llm
         )
 
     except HTTPException:

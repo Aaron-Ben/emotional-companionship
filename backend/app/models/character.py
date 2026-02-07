@@ -1,6 +1,6 @@
 """Character data models for the emotional companionship system."""
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
 from enum import Enum
 
@@ -36,7 +36,6 @@ class BehavioralParameters(BaseModel):
     proactivity_level: float = Field(default=0.8, ge=0.0, le=1.0)
     jealousy_frequency: float = Field(default=0.3, ge=0.0, le=1.0)
     opinionatedness: float = Field(default=0.7, ge=0.0, le=1.0)
-    emotional_sensitivity: float = Field(default=0.9, ge=0.0, le=1.0)
     argument_avoidance_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
 
 

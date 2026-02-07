@@ -1,7 +1,7 @@
 /** Diary edit modal component */
 
 import React, { useState, useEffect } from 'react';
-import { updateDiary, type DiaryEntry } from '../../services/diaryService';
+import { updateDiary, type DiaryEntry, extractDateFromPath } from '../../services/diaryService';
 
 interface DiaryEditModalProps {
   isOpen: boolean;
@@ -17,28 +17,14 @@ export const DiaryEditModal: React.FC<DiaryEditModalProps> = ({
   onUpdate
 }) => {
   const [content, setContent] = useState('');
-  const [tags, setTags] = useState<string[]>([]);
-  const [tagInput, setTagInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (diary) {
       setContent(diary.content);
-      setTags(diary.tags || []);
     }
   }, [diary]);
-
-  const handleAddTag = () => {
-    if (tagInput.trim() && !tags.includes(tagInput.trim())) {
-      setTags([...tags, tagInput.trim()]);
-      setTagInput('');
-    }
-  };
-
-  const handleRemoveTag = (tag: string) => {
-    setTags(tags.filter(t => t !== tag));
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,10 +35,7 @@ export const DiaryEditModal: React.FC<DiaryEditModalProps> = ({
     setError(null);
 
     try {
-      const result = await updateDiary(diary.id, {
-        content,
-        tags
-      });
+      const result = await updateDiary(diary.path, content);
 
       onUpdate?.(result.diary);
       onClose();
@@ -64,6 +47,14 @@ export const DiaryEditModal: React.FC<DiaryEditModalProps> = ({
   };
 
   if (!isOpen || !diary) return null;
+
+  // Extract date from path for display
+  const date = extractDateFromPath(diary.path);
+  const dateStr = date.toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
 
   return (
     <div
@@ -79,7 +70,7 @@ export const DiaryEditModal: React.FC<DiaryEditModalProps> = ({
           <div className="flex justify-between items-center">
             <div>
               <h2 className="text-2xl font-bold text-gray-800">编辑日记</h2>
-              <p className="text-sm text-gray-600 mt-1">{diary.date}</p>
+              <p className="text-sm text-gray-600 mt-1">{dateStr}</p>
             </div>
             <button
               onClick={onClose}
@@ -99,58 +90,17 @@ export const DiaryEditModal: React.FC<DiaryEditModalProps> = ({
           )}
 
           {/* Content */}
-          <div className="mb-4">
+          <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              日记内容
+              日记内容（包含末尾的 Tag 行）
             </label>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
               className="w-full h-64 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-none"
-              placeholder="写下今天发生的事情..."
+              placeholder="写下今天发生的事情...&#10;&#10;Tag: 开心, 温暖"
               required
             />
-          </div>
-
-          {/* Tags */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              内容标签
-            </label>
-            <div className="flex gap-2 mb-2">
-              <input
-                type="text"
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                placeholder="添加标签..."
-              />
-              <button
-                type="button"
-                onClick={handleAddTag}
-                className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600"
-              >
-                添加
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm"
-                >
-                  #{tag}
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveTag(tag)}
-                    className="hover:text-purple-900"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
           </div>
 
           {/* Actions */}

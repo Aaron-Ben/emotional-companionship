@@ -1,7 +1,7 @@
 /** Month group component for displaying diaries grouped by month */
 
 import React from 'react';
-import { DiaryGroup, DiaryEntry } from '../../services/diaryService';
+import { DiaryGroup, DiaryEntry, extractDateFromPath } from '../../services/diaryService';
 import { DiaryCard } from './DiaryCard';
 
 interface MonthGroupProps {
@@ -19,8 +19,6 @@ export const MonthGroup: React.FC<MonthGroupProps> = ({
   onEditDiary,
   onDeleteDiary,
 }) => {
-  const hasImportantDiary = group.diaries.some((d) => d.tags.includes('重要时刻'));
-
   return (
     <div id={`month-${group.year}-${group.month}`} className="month-group">
       {/* Month header */}
@@ -35,7 +33,6 @@ export const MonthGroup: React.FC<MonthGroupProps> = ({
           </div>
           <div className="flex items-center gap-2">
             <span className="text-sm opacity-75">{group.count}篇日记</span>
-            {hasImportantDiary && <span className="text-yellow-400">⭐</span>}
           </div>
         </div>
       </div>
@@ -46,10 +43,10 @@ export const MonthGroup: React.FC<MonthGroupProps> = ({
       >
         <div className="diary-list">
           {group.diaries
-            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+            .sort((a, b) => extractDateFromPath(b.path).getTime() - extractDateFromPath(a.path).getTime())
             .map((diary) => (
               <DiaryCard
-                key={diary.id}
+                key={diary.path}
                 diary={diary}
                 onSelect={onSelectDiary}
                 onEdit={onEditDiary}

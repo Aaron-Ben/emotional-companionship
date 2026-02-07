@@ -1,14 +1,14 @@
 /** Diary list modal component */
 
 import React, { useEffect, useState } from 'react';
-import { listDiaries, deleteDiary, type DiaryEntry } from '../../services/diaryService';
+import { listDiaries, deleteDiary, type DiaryEntry, extractDateFromPath } from '../../services/diaryService';
 import { DiaryDeleteModal } from './DiaryDeleteModal';
 import { DiaryTimeline } from './DiaryTimeline';
 
 interface DiaryListModalProps {
   isOpen: boolean;
   onClose: () => void;
-  characterId?: string;
+  diaryName?: string;
   onSelectDiary?: (diary: DiaryEntry) => void;
   onEditDiary?: (diary: DiaryEntry) => void;
 }
@@ -16,7 +16,7 @@ interface DiaryListModalProps {
 export const DiaryListModal: React.FC<DiaryListModalProps> = ({
   isOpen,
   onClose,
-  characterId = 'sister_001',
+  diaryName = 'sister_001',
   onSelectDiary,
   onEditDiary
 }) => {
@@ -30,14 +30,14 @@ export const DiaryListModal: React.FC<DiaryListModalProps> = ({
     if (isOpen) {
       loadDiaries();
     }
-  }, [isOpen, characterId]);
+  }, [isOpen, diaryName]);
 
   const loadDiaries = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const data = await listDiaries(characterId);
+      const data = await listDiaries(diaryName);
       setDiaries(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load diaries');
@@ -56,7 +56,7 @@ export const DiaryListModal: React.FC<DiaryListModalProps> = ({
     if (!diaryToDelete) return;
 
     try {
-      await deleteDiary(diaryToDelete.id);
+      await deleteDiary(diaryToDelete.path);
       // Reload the list after deletion
       loadDiaries();
       setDiaryToDelete(null);
@@ -83,7 +83,7 @@ export const DiaryListModal: React.FC<DiaryListModalProps> = ({
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="bg-gradient-to-r from-pink-100 to-purple-100 px-6 py-4 border-b border-pink-200">
+          <div className="bg-gradient-to-r from-pink-100 via-purple-100 px-6 py-4 border-b border-pink-200">
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-2xl font-bold text-gray-800">妹妹的日记本</h2>
@@ -130,7 +130,7 @@ export const DiaryListModal: React.FC<DiaryListModalProps> = ({
         isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
         onConfirm={handleConfirmDelete}
-        diaryDate={diaryToDelete?.date}
+        diaryDate={diaryToDelete ? extractDateFromPath(diaryToDelete.path).toLocaleDateString('zh-CN') : ''}
       />
     </>
   );

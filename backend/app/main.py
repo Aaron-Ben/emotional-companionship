@@ -10,7 +10,6 @@ load_dotenv()
 
 from app.api.v1 import character, chat, diary, temporal
 from app.services.character_service import CharacterService
-from app.services.diary import DiaryCoreService
 from app.models.database import init_db
 
 
@@ -66,12 +65,8 @@ app.add_middleware(
 # Initialize character service
 character_service = CharacterService()
 
-# Initialize diary service (note: not currently used, endpoints use dependency injection)
-diary_service = DiaryCoreService()
-
 # Store services in app state for dependency injection
 app.state.character_service = character_service
-app.state.diary_service = diary_service
 
 
 # Include routers

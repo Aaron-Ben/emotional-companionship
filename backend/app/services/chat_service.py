@@ -2,16 +2,16 @@
 
 from typing import List, Dict, Optional, AsyncGenerator, Any
 import random
+import re
 from datetime import datetime
 
-from app.services.llms.base import LLMBase
+from app.services.llm import LLM
 from app.services.character_service import CharacterService
-from app.services.diary import DiaryCoreService
+from app.services.diary import DiaryFileService
 from app.models.character import UserCharacterPreference
 from app.schemas.message import (
     ChatRequest,
     ChatResponse,
-    EmotionState,
     MessageContext
 )
 
@@ -21,7 +21,7 @@ class ChatService:
     Enhanced chat service that integrates character personalities with LLM services.
     """
 
-    def __init__(self, llm: LLMBase, character_service: CharacterService):
+    def __init__(self, llm: LLM, character_service: CharacterService):
         """
         Initialize chat service.
 
@@ -31,7 +31,7 @@ class ChatService:
         """
         self.llm = llm
         self.character_service = character_service
-        self.diary_core_service = DiaryCoreService()
+        self.diary_service = DiaryFileService()
 
     async def chat(
         self,
@@ -50,14 +50,8 @@ class ChatService:
         Returns:
             ChatResponse: Character's response with metadata
         """
-        # Analyze user message for emotion/context
-        emotion_state = self._detect_emotion(request.message)
-
         # Build message context
-        message_context = self._build_message_context(
-            emotion_state,
-            request
-        )
+        message_context = self._build_message_context(request)
 
         # Generate system prompt with character and context
         system_prompt = self.character_service.generate_system_prompt(
@@ -67,7 +61,7 @@ class ChatService:
         )
 
         # Add diary context if available
-        if self.diary_core_service:
+        if self.diary_service:
             diary_context = await self._get_diary_context(
                 character_id=request.character_id,
                 user_id=user_id,
@@ -94,7 +88,6 @@ class ChatService:
             message=message_content,
             character_id=request.character_id,
             context_used=message_context.dict() if message_context else None,
-            emotion_detected=emotion_state,
             timestamp=datetime.now()
         )
 
@@ -115,14 +108,8 @@ class ChatService:
         Yields:
             str: Chunks of the character's response
         """
-        # Analyze user message for emotion/context
-        emotion_state = self._detect_emotion(request.message)
-
         # Build message context
-        message_context = self._build_message_context(
-            emotion_state,
-            request
-        )
+        message_context = self._build_message_context(request)
 
         # Generate system prompt with character and context
         system_prompt = self.character_service.generate_system_prompt(
@@ -132,7 +119,7 @@ class ChatService:
         )
 
         # Add diary context if available
-        if self.diary_core_service:
+        if self.diary_service:
             diary_context = await self._get_diary_context(
                 character_id=request.character_id,
                 user_id=user_id,
@@ -165,34 +152,75 @@ class ChatService:
         Get relevant diary entries for context.
 
         Args:
-            character_id: Character ID
+            character_id: Character ID (used as diary_name)
             user_id: User ID
             current_message: Current user message
 
         Returns:
             Formatted diary context or None
         """
-        if not self.diary_core_service:
+        if not self.diary_service:
             return None
 
         try:
-            relevant_diaries = await self.diary_core_service.get_relevant_diaries(
-                character_id=character_id,
-                user_id=user_id,
-                current_message=current_message,
-                limit=3
+            # Get recent diaries for this character
+            diaries = self.diary_service.list_diaries(
+                diary_name=character_id,
+                limit=10
             )
+
+            if not diaries:
+                return None
+
+            # Filter for relevant diaries based on message
+            relevant_diaries = self._filter_relevant_diaries(diaries, current_message)
 
             if not relevant_diaries:
                 return None
 
-            return self._format_diary_context(relevant_diaries)
+            return self._format_diary_context(relevant_diaries[:3])
         except Exception as e:
             # Log error but don't fail the chat
             print(f"Error getting diary context: {e}")
             return None
 
-    def _format_diary_context(self, diaries: List) -> str:
+    def _filter_relevant_diaries(self, diaries: List[Dict], message: str) -> List[Dict]:
+        """
+        Filter diaries for relevance to current message.
+
+        Args:
+            diaries: List of diary entries
+            message: Current message
+
+        Returns:
+            List of relevant diaries
+        """
+        message_lower = message.lower()
+        relevant = []
+
+        for diary in diaries:
+            content = diary.get("content", "")
+
+            # Extract tags from content
+            tag_match = re.search(r'Tag:\s*(.+)$', content, re.MULTILINE | re.IGNORECASE)
+            if tag_match:
+                tag_string = tag_match.group(1)
+                tags = [tag.strip() for tag in re.split(r'[,，、]', tag_string) if tag.strip()]
+                for tag in tags:
+                    if tag.lower() in message_lower:
+                        relevant.append(diary)
+                        break
+
+            # Check content keywords
+            keywords = ["哥哥", "今天", "昨天", "开心", "难过"]
+            for keyword in keywords:
+                if keyword in content and keyword in message_lower:
+                    relevant.append(diary)
+                    break
+
+        return relevant
+
+    def _format_diary_context(self, diaries: List[Dict]) -> str:
         """
         Format diary entries as context.
 
@@ -205,7 +233,16 @@ class ChatService:
         context_parts = ["## 之前的回忆\n\n"]
 
         for diary in diaries:
-            context_parts.append(f"**{diary.date}的日记**\n{diary.content}\n")
+            # Extract date from filename (format: YYYY-MM-DD_HHMMSS.txt)
+            path = diary.get("path", "")
+            filename = path.split("/")[-1] if "/" in path else path
+            date_part = filename.split("_")[0] if "_" in filename else "未知日期"
+
+            content = diary.get("content", "")
+            # Remove Tag line from context display
+            content_without_tag = re.sub(r'\n\nTag:.*$', '', content, flags=re.MULTILINE | re.IGNORECASE)
+
+            context_parts.append(f"**{date_part}的日记**\n{content_without_tag}\n")
 
         return "\n".join(context_parts)
 
@@ -228,115 +265,34 @@ class ChatService:
 但不要刻意提及，要自然融入。
 """
 
-    def _detect_emotion(self, message: str) -> Optional[EmotionState]:
-        """
-        Detect emotion from user message.
-
-        This is a simplified rule-based implementation.
-        In production, you might use a dedicated emotion detection model
-        or sentiment analysis service.
-
-        Args:
-            message: User's message
-
-        Returns:
-            EmotionState: Detected emotion or None
-        """
-        message_lower = message.lower()
-
-        # Simple keyword-based emotion detection
-        # In production, replace with actual emotion detection model
-
-        anger_keywords = ["气死", "烦死", "讨厌", "滚", "混蛋", "去死", "气死我了", "烦死了"]
-        sadness_keywords = ["难过", "伤心", "累", "痛苦", "想哭", "郁闷", "不开心", "难过", "难过死了"]
-        happiness_keywords = ["开心", "高兴", "快乐", "哈哈", "太棒了", "成功", "好开心", "好激动"]
-        excitement_keywords = ["哇", "太好了", "厉害", "棒", "激动", "兴奋"]
-
-        # Check for anger
-        for keyword in anger_keywords:
-            if keyword in message:
-                return EmotionState(
-                    primary_emotion="angry",
-                    confidence=0.75,
-                    intensity=0.7
-                )
-
-        # Check for sadness
-        for keyword in sadness_keywords:
-            if keyword in message:
-                return EmotionState(
-                    primary_emotion="sad",
-                    confidence=0.75,
-                    intensity=0.6
-                )
-
-        # Check for happiness
-        for keyword in happiness_keywords:
-            if keyword in message:
-                return EmotionState(
-                    primary_emotion="happy",
-                    confidence=0.8,
-                    intensity=0.7
-                )
-
-        # Check for excitement
-        for keyword in excitement_keywords:
-            if keyword in message:
-                return EmotionState(
-                    primary_emotion="excited",
-                    confidence=0.75,
-                    intensity=0.75
-                )
-
-        # Default neutral
-        return EmotionState(
-            primary_emotion="neutral",
-            confidence=0.6,
-            intensity=0.3
-        )
-
     def _build_message_context(
         self,
-        emotion_state: Optional[EmotionState],
         request: ChatRequest
     ) -> Optional[MessageContext]:
         """
-        Build message context based on emotion and request metadata.
+        Build message context based on request metadata.
 
         Args:
-            emotion_state: Detected emotion state
             request: Chat request
 
         Returns:
             MessageContext or None
         """
-        if not emotion_state:
-            return None
-
-        # Determine if arguments should be avoided
-        should_avoid = emotion_state.primary_emotion in ["angry", "very_sad", "frustrated"]
-
         # Get character to check behavior parameters
         character = self.character_service.get_character(request.character_id)
 
-        character_state = {}
-        if character:
-            character_state = {
-                "proactivity_level": character.behavior.proactivity_level,
-                "emotional_sensitivity": character.behavior.emotional_sensitivity,
-                "argument_avoidance_threshold": character.behavior.argument_avoidance_threshold
-            }
+        if not character:
+            return None
 
-        # Determine if character should initiate a topic
-        initiate_topic = (
-            emotion_state.primary_emotion == "neutral" and
-            character and
-            random.random() < character.behavior.proactivity_level
-        )
+        character_state = {
+            "proactivity_level": character.behavior.proactivity_level,
+            "argument_avoidance_threshold": character.behavior.argument_avoidance_threshold
+        }
+
+        # Determine if character should initiate a topic (random based on proactivity)
+        initiate_topic = random.random() < character.behavior.proactivity_level
 
         return MessageContext(
-            user_mood=emotion_state,
             character_state=character_state,
-            should_avoid_argument=should_avoid,
             initiate_topic=initiate_topic
         )

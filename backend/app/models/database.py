@@ -1,7 +1,7 @@
 """Database configuration and models for emotional companionship system."""
 
 import os
-from sqlalchemy import create_engine, Column, String, DateTime, Text, JSON
+from sqlalchemy import create_engine, Column, String, Integer, Text, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -17,19 +17,17 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
-class DiaryTable(Base):
-    """日记数据库表"""
-    __tablename__ = "diaries"
+class DiaryFileTable(Base):
+    """日记表"""
+    __tablename__ = "diary_files"
 
-    id = Column(String, primary_key=True, index=True)
-    character_id = Column(String, index=True, nullable=False)
-    user_id = Column(String, index=True, nullable=False)
-    date = Column(String, index=True, nullable=False)
-    content = Column(Text, nullable=False)
-    category = Column(String, nullable=False)
-    tags = Column(JSON, default=list)
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    path = Column(Text, unique=True, nullable=False, index=True)
+    diary_name = Column(String, nullable=False, index=True)
+    checksum = Column(String, nullable=False)
+    mtime = Column(Integer, nullable=False)
+    size = Column(Integer, nullable=False)
+    updated_at = Column(Integer, nullable=False)
 
 
 class FutureEventTable(Base):
@@ -43,7 +41,7 @@ class FutureEventTable(Base):
     description = Column(Text, nullable=True)
     event_date = Column(String, index=True, nullable=False)
     source_conversation = Column(Text, nullable=True)
-    tags = Column(JSON, default=list)
+    tags = Column(Text, nullable=True)  # JSON string
     status = Column(String, nullable=False, default="pending")
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=True)

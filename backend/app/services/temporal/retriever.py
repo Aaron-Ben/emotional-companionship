@@ -1,8 +1,9 @@
 """Event retriever for storing and retrieving future timeline events."""
 
+import json
 import logging
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Union
 from datetime import datetime, timedelta
 
 from app.models.database import SessionLocal, FutureEventTable
@@ -29,6 +30,30 @@ class EventRetriever:
     def __init__(self):
         """Initialize event retriever."""
         self.normalizer = TimeNormalizer()
+
+    @staticmethod
+    def _parse_tags(tags_value: Union[str, List[str], None]) -> List[str]:
+        """
+        Parse tags from database value (JSON string or list).
+
+        Args:
+            tags_value: Tags value from database (string JSON, list, or None)
+
+        Returns:
+            List of tag strings
+        """
+        if tags_value is None:
+            return []
+        if isinstance(tags_value, list):
+            return tags_value
+        if isinstance(tags_value, str):
+            try:
+                parsed = json.loads(tags_value)
+                return parsed if isinstance(parsed, list) else []
+            except (json.JSONDecodeError, TypeError):
+                # If not valid JSON, return empty list
+                return []
+        return []
 
     @staticmethod
     def _parse_enum(value: str, enum_class):
@@ -89,7 +114,7 @@ class EventRetriever:
                         description=existing.description,
                         event_date=existing.event_date,
                         source_conversation=existing.source_conversation,
-                        tags=existing.tags or [],
+                        tags=self._parse_tags(existing.tags),
                         status=self._parse_enum(existing.status, EventStatus),
                         created_at=existing.created_at,
                         updated_at=existing.updated_at
@@ -107,7 +132,7 @@ class EventRetriever:
                         description=event.description,
                         event_date=event.event_date,
                         source_conversation=event.source_conversation,
-                        tags=event.tags,
+                        tags=json.dumps(event.tags) if event.tags else "[]",
                         status=event.status.value,
                         created_at=now,
                         updated_at=None
@@ -186,7 +211,7 @@ class EventRetriever:
                     description=db_event.description,
                     event_date=db_event.event_date,
                     source_conversation=db_event.source_conversation,
-                    tags=db_event.tags or [],
+                    tags=self._parse_tags(db_event.tags),
                     status=self._parse_enum(db_event.status, EventStatus),
                     created_at=db_event.created_at,
                     updated_at=db_event.updated_at
@@ -231,7 +256,7 @@ class EventRetriever:
                     description=db_event.description,
                     event_date=db_event.event_date,
                     source_conversation=db_event.source_conversation,
-                    tags=db_event.tags or [],
+                    tags=self._parse_tags(db_event.tags),
                     status=self._parse_enum(db_event.status, EventStatus),
                     created_at=db_event.created_at,
                     updated_at=db_event.updated_at
@@ -282,7 +307,7 @@ class EventRetriever:
                 description=db_event.description,
                 event_date=db_event.event_date,
                 source_conversation=db_event.source_conversation,
-                tags=db_event.tags or [],
+                tags=self._parse_tags(db_event.tags),
                 status=request.status,
                 created_at=db_event.created_at,
                 updated_at=db_event.updated_at

@@ -1,19 +1,15 @@
 """Diary-related services for emotional companionship system.
 
-Simplified diary system with:
-- Unified core service for diary generation
-- Modular prompt-based system
-- SQLite-only storage (no file system)
-- AI-powered quality checking and tag generation
-- AI-based diary creation and update service
+File-based diary system:
+- Diaries stored as text files in organized folders
+- Database tracks file metadata (path, checksum, mtime, size)
+- Similar to VCPToolBox DailyNote plugin functionality
 """
 
-from app.services.diary.core_service import DiaryCoreService
-from app.services.diary.tag_service import DiaryTagService
-from app.services.diary.ai_service import AIDiaryService
+from app.services.diary.file_service import DiaryFileService, get_diary_root, sanitize_path_component
 
 __all__ = [
-    "DiaryCoreService",
-    "DiaryTagService",
-    "AIDiaryService",
+    "DiaryFileService",
+    "get_diary_root",
+    "sanitize_path_component",
 ]

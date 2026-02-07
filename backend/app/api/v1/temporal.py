@@ -4,8 +4,7 @@ import logging
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends
 
-from app.services.llms.qwen import QwenLLM
-from app.services.llms.deepseek import DeepSeekLLM
+from app.services.llm import LLM
 from app.services.temporal import (
     TimeExtractor,
     EventRetriever,
@@ -28,19 +27,17 @@ router = APIRouter(prefix="/api/v1/timeline", tags=["timeline"])
 logger = logging.getLogger(__name__)
 
 
-def get_llm_service() -> QwenLLM | DeepSeekLLM:
+def get_llm_service() -> LLM:
     """
     Dependency injection for LLM service.
-    Uses DeepSeek-V3 by default, can be configured via environment.
+    Uses OpenRouter by default.
     """
     import os
 
-    llm_provider = os.getenv("LLM_PROVIDER", "deepseek").lower()
+    # Get model from environment or use default
+    model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
 
-    if llm_provider == "qwen":
-        return QwenLLM()
-
-    return DeepSeekLLM(config={"model": "deepseek-chat"})
+    return LLM(config={"model": model})
 
 
 def get_mock_user_id() -> str:
@@ -54,7 +51,7 @@ def get_mock_user_id() -> str:
 @router.post("/extract", response_model=ExtractTimelineResponse)
 async def extract_timeline(
     request: ExtractTimelineRequest,
-    llm: QwenLLM | DeepSeekLLM = Depends(get_llm_service)
+    llm: LLM = Depends(get_llm_service)
 ):
     """
     Extract future timeline events from conversation.
