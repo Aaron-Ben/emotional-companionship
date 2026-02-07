@@ -27,7 +27,6 @@ class DiaryTable(Base):
     date = Column(String, index=True, nullable=False)
     content = Column(Text, nullable=False)
     category = Column(String, nullable=False)
-    emotions = Column(JSON, default=list)
     tags = Column(JSON, default=list)
     created_at = Column(DateTime, nullable=False)
     updated_at = Column(DateTime, nullable=True)

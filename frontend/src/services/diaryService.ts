@@ -6,8 +6,7 @@ export interface DiaryEntry {
   user_id: string;
   date: string;
   content: string;
-  trigger_type: string;
-  emotions: string[];
+  category: string;
   tags: string[];
   created_at: string;
   updated_at?: string;
@@ -62,7 +61,6 @@ export async function generateDiary(data: {
   character_id: string;
   conversation_summary: string;
   trigger_type: string;
-  emotions: string[];
 }): Promise<{ diary: DiaryEntry; message: string }> {
   const response = await fetch(`${API_BASE}/api/v1/diary/generate`, {
     method: 'POST',
@@ -81,7 +79,6 @@ export async function updateDiary(
   diaryId: string,
   data: {
     content: string;
-    emotions: string[];
     tags: string[];
   }
 ): Promise<{ diary: DiaryEntry; message: string }> {

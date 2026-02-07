@@ -17,7 +17,6 @@ export const DiaryDetailModal: React.FC<DiaryDetailModalProps> = ({
   if (!isOpen || !diary) return null;
 
   const dateObj = new Date(diary.date);
-  const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
 
   return (
     <div
@@ -85,29 +84,9 @@ export const DiaryDetailModal: React.FC<DiaryDetailModalProps> = ({
             </div>
           )}
 
-          {/* Emotions */}
-          {diary.emotions.length > 0 && (
-            <div className="mb-6 pt-4 border-t border-pink-100">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                <span>💭</span>
-                <span>心情</span>
-              </h3>
-              <div className="flex gap-2 flex-wrap">
-                {diary.emotions.map((emotion) => (
-                  <span
-                    key={emotion}
-                    className="px-3 py-1.5 bg-pink-100 text-pink-700 rounded-lg text-sm font-medium"
-                  >
-                    {emotion}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Metadata */}
           <div className="pt-4 border-t border-gray-200 text-xs text-gray-500 space-y-1">
-            <p>触发类型: {diary.trigger_type}</p>
+            <p>分类: {diary.category}</p>
             <p>创建时间: {new Date(diary.created_at).toLocaleString('zh-CN')}</p>
           </div>
         </div>

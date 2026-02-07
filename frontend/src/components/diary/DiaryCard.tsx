@@ -39,21 +39,18 @@ export const DiaryCard: React.FC<DiaryCardProps> = ({
         </button>
       </div>
 
-      {/* Date and emotions */}
+      {/* Date */}
       <div className="flex justify-between items-start mb-3 pr-16">
         <h3 className="font-bold text-gray-800 text-lg flex items-center gap-2">
           <span className="text-2xl">📔</span>
           {diary.date}
         </h3>
         <div className="flex gap-2 flex-wrap">
-          {diary.emotions.map((emotion) => (
-            <span
-              key={emotion}
-              className="text-xs px-2 py-1 bg-pink-200 text-pink-700 rounded-full font-medium"
-            >
-              {emotion}
+          {diary.category && (
+            <span className="text-xs px-2 py-1 bg-purple-200 text-purple-700 rounded-full font-medium">
+              {diary.category}
             </span>
-          ))}
+          )}
         </div>
       </div>
 

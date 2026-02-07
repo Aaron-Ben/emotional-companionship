@@ -155,9 +155,6 @@ class DiaryCoreService:
             tags = [category]
             diary_content_with_tags = f"{diary_content}\n\nTag: {category}"
 
-        # Extract emotions
-        emotions = self._extract_emotions(diary_content)
-
         # Create diary entry
         from app.models.diary import DiaryEntry
         diary_entry = DiaryEntry(
@@ -167,7 +164,6 @@ class DiaryCoreService:
             date=datetime.now().strftime("%Y-%m-%d"),
             content=diary_content_with_tags,
             category=category,
-            emotions=emotions,
             tags=tags
         )
 
@@ -190,7 +186,6 @@ class DiaryCoreService:
                 date=diary_entry.date,
                 content=diary_entry.content,
                 category=diary_entry.category,
-                emotions=diary_entry.emotions,
                 tags=diary_entry.tags,
                 created_at=diary_entry.created_at,
                 updated_at=diary_entry.updated_at
@@ -213,33 +208,6 @@ class DiaryCoreService:
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         return f"diary_{character_id}_{user_id}_{timestamp}"
-
-    def _extract_emotions(self, content: str) -> List[str]:
-        """Extract emotion tags from diary content.
-
-        Args:
-            content: Diary content
-
-        Returns:
-            List of emotion labels
-        """
-        emotions = []
-        emotion_keywords = {
-            "开心": ["开心", "高兴", "快乐", "幸福", "兴奋"],
-            "难过": ["难过", "伤心", "痛苦", "郁闷", "悲伤"],
-            "生气": ["生气", "愤怒", "气死", "讨厌"],
-            "担心": ["担心", "忧虑", "紧张", "害怕"],
-            "温暖": ["温暖", "感动", "幸福", "甜蜜"],
-            "期待": ["期待", "盼望", "希望", "向往"]
-        }
-
-        content_lower = content.lower()
-        for emotion, keywords in emotion_keywords.items():
-            if any(keyword in content_lower for keyword in keywords):
-                if emotion not in emotions:
-                    emotions.append(emotion)
-
-        return emotions if emotions else ["平静"]
 
     async def get_relevant_diaries(
         self,
@@ -276,7 +244,6 @@ class DiaryCoreService:
                     date=db_diary.date,
                     content=db_diary.content,
                     category=db_diary.category,
-                    emotions=db_diary.emotions,
                     tags=db_diary.tags,
                     created_at=db_diary.created_at,
                     updated_at=db_diary.updated_at
@@ -306,11 +273,6 @@ class DiaryCoreService:
         # Check tag match
         for tag in diary.tags:
             if tag.lower() in message_lower:
-                return True
-
-        # Check emotion match
-        for emotion in diary.emotions:
-            if emotion.lower() in message_lower:
                 return True
 
         # Check content keywords

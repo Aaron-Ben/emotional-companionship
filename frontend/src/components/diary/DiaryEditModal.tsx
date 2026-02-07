@@ -17,9 +17,7 @@ export const DiaryEditModal: React.FC<DiaryEditModalProps> = ({
   onUpdate
 }) => {
   const [content, setContent] = useState('');
-  const [emotions, setEmotions] = useState<string[]>([]);
   const [tags, setTags] = useState<string[]>([]);
-  const [emotionInput, setEmotionInput] = useState('');
   const [tagInput, setTagInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,21 +25,9 @@ export const DiaryEditModal: React.FC<DiaryEditModalProps> = ({
   useEffect(() => {
     if (diary) {
       setContent(diary.content);
-      setEmotions(diary.emotions || []);
       setTags(diary.tags || []);
     }
   }, [diary]);
-
-  const handleAddEmotion = () => {
-    if (emotionInput.trim() && !emotions.includes(emotionInput.trim())) {
-      setEmotions([...emotions, emotionInput.trim()]);
-      setEmotionInput('');
-    }
-  };
-
-  const handleRemoveEmotion = (emotion: string) => {
-    setEmotions(emotions.filter(e => e !== emotion));
-  };
 
   const handleAddTag = () => {
     if (tagInput.trim() && !tags.includes(tagInput.trim())) {
@@ -65,7 +51,6 @@ export const DiaryEditModal: React.FC<DiaryEditModalProps> = ({
     try {
       const result = await updateDiary(diary.id, {
         content,
-        emotions,
         tags
       });
 
@@ -125,47 +110,6 @@ export const DiaryEditModal: React.FC<DiaryEditModalProps> = ({
               placeholder="写下今天发生的事情..."
               required
             />
-          </div>
-
-          {/* Emotions */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              情绪标签
-            </label>
-            <div className="flex gap-2 mb-2">
-              <input
-                type="text"
-                value={emotionInput}
-                onChange={(e) => setEmotionInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddEmotion())}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                placeholder="添加情绪..."
-              />
-              <button
-                type="button"
-                onClick={handleAddEmotion}
-                className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600"
-              >
-                添加
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {emotions.map((emotion) => (
-                <span
-                  key={emotion}
-                  className="inline-flex items-center gap-1 px-3 py-1 bg-pink-100 text-pink-700 rounded-full text-sm"
-                >
-                  {emotion}
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveEmotion(emotion)}
-                    className="hover:text-pink-900"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
           </div>
 
           {/* Tags */}
