@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-from app.api.v1 import character, chat, diary, temporal
+from app.api.v1 import character, chat, diary
 from app.services.character_service import CharacterService
 from app.models.database import init_db
 
@@ -73,7 +73,6 @@ app.state.character_service = character_service
 app.include_router(character.router)
 app.include_router(chat.router)
 app.include_router(diary.router)
-app.include_router(temporal.router)
 
 
 @app.get("/")
@@ -87,7 +86,6 @@ async def root():
             "characters": "/api/v1/character/",
             "chat": "/api/v1/chat/",
             "diary": "/api/v1/diary/",
-            "timeline": "/api/v1/timeline/",
             "docs": "/docs"
         }
     }

@@ -30,23 +30,6 @@ class DiaryFileTable(Base):
     updated_at = Column(Integer, nullable=False)
 
 
-class FutureEventTable(Base):
-    """未来事件数据库表"""
-    __tablename__ = "future_events"
-
-    id = Column(String, primary_key=True, index=True)
-    character_id = Column(String, index=True, nullable=False)
-    user_id = Column(String, index=True, nullable=False)
-    title = Column(String, nullable=False)
-    description = Column(Text, nullable=True)
-    event_date = Column(String, index=True, nullable=False)
-    source_conversation = Column(Text, nullable=True)
-    tags = Column(Text, nullable=True)  # JSON string
-    status = Column(String, nullable=False, default="pending")
-    created_at = Column(DateTime, nullable=False)
-    updated_at = Column(DateTime, nullable=True)
-
-
 def init_db():
     """初始化数据库，创建所有表"""
     Base.metadata.create_all(bind=engine)

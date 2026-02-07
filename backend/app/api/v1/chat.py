@@ -10,7 +10,6 @@ import logging
 from app.services.llm import LLM
 from app.services.character_service import CharacterService
 from app.services.chat_service import ChatService
-from app.services.temporal import TimeExtractor, EventRetriever
 from app.models.character import UserCharacterPreference
 from app.schemas.message import ChatRequest, ChatResponse, VoiceResponse, TTSRequest, TTSResponse
 
@@ -201,46 +200,6 @@ Tag: 关键词1, 关键词2, 关键词3
         logger.error(f"Error extracting/saving diary: {e}")
 
 
-async def extract_and_save_timeline(
-    character_id: str,
-    user_id: str,
-    conversation_messages: List[Dict[str, str]],
-    llm: LLM
-):
-    """
-    Extract and save timeline events from conversation (async).
-
-    This runs in the background after a response is sent.
-    Automatically extracts future events mentioned in the conversation.
-    """
-    try:
-        from app.services.temporal.models import ExtractTimelineRequest
-
-        logger.info(f"Extracting timeline events for {user_id}/{character_id}")
-
-        # Create timeline extraction request
-        timeline_request = ExtractTimelineRequest(
-            character_id=character_id,
-            user_id=user_id,
-            conversation_messages=conversation_messages
-        )
-
-        # Extract events using LLM
-        extractor = TimeExtractor(llm)
-        events = extractor.extract_from_conversation(timeline_request)
-
-        if events:
-            # Save events to database
-            retriever = EventRetriever()
-            retriever.save_events(events)
-            logger.info(f"Timeline extracted and saved {len(events)} events for {user_id}/{character_id}")
-        else:
-            logger.info(f"No timeline events found for {user_id}/{character_id}")
-
-    except Exception as e:
-        logger.error(f"Error extracting timeline: {e}")
-
-
 @router.post("/", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
@@ -304,16 +263,6 @@ async def chat(
         # Trigger async diary extraction (AI will judge if worth recording)
         asyncio.create_task(
             extract_and_save_diary(
-                character_id=request.character_id,
-                user_id=user_id,
-                conversation_messages=conversation_messages,
-                llm=llm
-            )
-        )
-
-        # Always trigger async timeline extraction (don't wait for it)
-        asyncio.create_task(
-            extract_and_save_timeline(
                 character_id=request.character_id,
                 user_id=user_id,
                 conversation_messages=conversation_messages,

@@ -5,7 +5,6 @@ import { RPGChatPanel } from '../components/conversation';
 import { ChatHistory } from '../components/history';
 import { FloatingActionButton } from '../components/ui';
 import { DiaryListModal, DiaryDetailModal, DiaryEditModal } from '../components/diary';
-import { FutureTimelineModal } from '../components/timeline';
 import { useChat } from '../hooks/useChat';
 import backgroundImage from '/background/image.png';
 import type { DiaryEntry } from '../services/diaryService';
@@ -15,7 +14,6 @@ export const ChatPage: React.FC = () => {
   const [showDiaries, setShowDiaries] = useState(false);
   const [showDiaryDetail, setShowDiaryDetail] = useState(false);
   const [showDiaryEdit, setShowDiaryEdit] = useState(false);
-  const [showTimeline, setShowTimeline] = useState(false);
   const [selectedDiary, setSelectedDiary] = useState<DiaryEntry | null>(null);
   const [userInput, setUserInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -136,13 +134,6 @@ export const ChatPage: React.FC = () => {
         position="bottom-right"
         index={1}
       />
-      <FloatingActionButton
-        onClick={() => setShowTimeline(true)}
-        icon="📅"
-        ariaLabel="未来时间线"
-        position="bottom-right"
-        index={2}
-      />
 
       {/* Modals */}
       <ChatHistory
@@ -167,15 +158,6 @@ export const ChatPage: React.FC = () => {
         onClose={() => setShowDiaryEdit(false)}
         diary={selectedDiary}
         onUpdate={handleDiaryUpdate}
-      />
-
-      {/* Timeline Modal */}
-      <FutureTimelineModal
-        isOpen={showTimeline}
-        onClose={() => setShowTimeline(false)}
-        characterId="sister_001"
-        userId="user_default"
-        daysAhead={30}
       />
     </div>
   );
