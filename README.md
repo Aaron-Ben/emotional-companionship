@@ -1,6 +1,6 @@
 # 情感陪伴 AI 系统
 
-一个基于 FastAPI + React 的情感陪伴 AI 系统，提供智能对话、角色定制、日记记录等功能。
+一个基于 FastAPI + React 的情感陪伴 AI 系统，提供智能对话、角色定制、日记记录、向量搜索等功能。
 
 ## 功能特性
 
@@ -9,7 +9,7 @@
 - 角色模板系统，快速创建不同类型的陪伴角色
 - 用户个性化偏好设置
 
-### 🚀 扩展功能系统（NEW!）
+### 🚀 扩展功能系统
 系统现已支持模块化扩展功能，为角色添加更丰富的交互体验：
 
 #### 1. 对话深度与层次
@@ -48,6 +48,12 @@
 - 支持多轮对话历史记录
 - 情绪检测与状态管理
 
+### 🔍 向量搜索 (NEW!)
+- **智能检索**：基于语义向量的日记内容检索
+- **时间表达式解析**：支持"上周"、"3天前"等自然语言时间查询
+- **标签系统**：自动提取和关联标签
+- **文本分块**：智能分块处理长文本
+
 ### 🎤 语音输入
 - **按住说话**：按住麦克风按钮开始录音，松开自动识别
 - **多语言识别**：支持中文、英文、日文、韩文、粤语
@@ -80,9 +86,9 @@
 ## 技术栈
 
 ### 后端
-- **框架**: FastAPI 0.109.0
-- **数据库**: SQLite + SQLAlchemy 2.0.36
-- **LLM**: 支持通义千问、DeepSeek
+- **框架**: FastAPI
+- **数据库**: SQLite + SQLAlchemy 2.0
+- **LLM & Embedding**: OpenRouter
 - **语音识别**: Sherpa-ONNX SenseVoice
 - **语音合成**: Genie-TTS (GPT-SoVITS)
 - **Python**: 3.13+
@@ -105,13 +111,19 @@ emotional-companionship/
 │   │   │       ├── character.py  # 角色管理
 │   │   │       ├── diary.py   # 日记接口
 │   │   │       └── character_extensions.py  # 扩展功能接口
+│   │   ├── config/            # 配置模块
+│   │   │   └── time_expressions.py  # 时间表达式配置
 │   │   ├── models/            # 数据模型
 │   │   │   ├── character.py   # 角色模型
 │   │   │   ├── character_extensions.py  # 扩展功能模型
-│   │   │   └── database.py    # 数据库配置
+│   │   │   └── database.py    # 数据库配置 (新增 chunks, tags, file_tags, kv_store)
+│   │   ├── schemas/           # Pydantic 模型
 │   │   ├── services/          # 业务逻辑
 │   │   │   ├── chat_service.py      # 对话服务
 │   │   │   ├── character_service.py # 角色服务
+│   │   │   ├── embedding.py         # Embedding 服务 (OpenRouter)
+│   │   │   ├── chunk_text.py        # 文本分块服务
+│   │   │   ├── time_parser.py       # 时间表达式解析
 │   │   │   ├── character_extensions/  # 扩展功能服务
 │   │   │   │   ├── extended_character_service.py
 │   │   │   │   ├── conversation_depth_service.py  # 对话深度
@@ -119,8 +131,8 @@ emotional-companionship/
 │   │   │   │   ├── emotional_authenticity_service.py  # 情感系统
 │   │   │   │   ├── practical_features_service.py  # 实用功能
 │   │   │   │   └── archetype_service.py  # 角色模板
-│   │   │   ├── diary/         # 日记服务
-│   │   │   │   └── file_service.py  # 文件系统日记服务
+│   │   │   └── diary/         # 日记服务
+│   │   │       └── file_service.py  # 文件系统日记服务
 │   │   ├── characters/        # 角色模块
 │   │   │   ├── asr.py         # 语音识别
 │   │   │   └── tts.py         # 语音合成
@@ -132,12 +144,13 @@ emotional-companionship/
 │   │   │       ├── emotional_companion.yaml
 │   │   │       ├── mentor.yaml
 │   │   │       └── friend.yaml
-│   │   ├── schemas/           # Pydantic 模型
 │   │   └── main.py            # 应用入口
 │   ├── model/                 # AI 模型文件
 │   │   └── ASR/               # 语音识别模型
 │   │       └── sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/
 │   ├── tests/                 # 测试文件
+│   ├── .env                   # 环境变量配置
+│   ├── .env.example           # 环境变量示例
 │   ├── migrate_extensions.py  # 数据库迁移脚本
 │   └── requirements.txt       # Python 依赖
 │
@@ -166,7 +179,7 @@ emotional-companionship/
 ### 环境要求
 - Python 3.13+
 - Node.js 18+
-- 通义千问 API Key 或 DeepSeek API Key
+- OpenRouter API Key
 
 ### 后端设置
 
@@ -186,11 +199,15 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. 配置环境变量（创建 `.env` 文件）：
+4. 配置环境变量（复制 `.env.example` 到 `.env` 并填入你的 API Key）：
 ```env
-DASHSCOPE_API_KEY=your_qwen_api_key
-# 或
-DEEPSEEK_API_KEY=your_deepseek_api_key
+# OpenRouter API Key (必需 - 用于 LLM 和 Embedding)
+OPENROUTER_API_KEY=sk-or-v1-xxxxx
+
+# API 配置
+API_URL=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=deepseek/deepseek-v3.2
+EmbeddingModel=baai/bge-m3
 ```
 
 5. **（可选）下载语音识别模型**：
@@ -260,7 +277,7 @@ npm run dev
 - `GET /api/v1/character/{id}` - 获取角色详情
 - `POST /api/v1/character/{id}/preference` - 设置偏好
 
-#### 扩展功能（NEW!）
+#### 扩展功能
 - `GET /api/v1/character/extensions/{id}/state` - 获取扩展状态
 - `GET /api/v1/character/extensions/{id}/relationship` - 获取关系状态
 - `POST /api/v1/character/extensions/{id}/reminders` - 创建提醒
@@ -353,9 +370,20 @@ service.save_character(character)
 
 ## 配置说明
 
+### 环境变量 (.env)
+
+| 变量 | 说明 | 默认值 | 必需 |
+|------|------|--------|------|
+| `OPENROUTER_API_KEY` | OpenRouter API Key (LLM + Embedding) | - | ✅ |
+| `API_URL` | OpenRouter API 地址 | `https://openrouter.ai/api/v1` | ❌ |
+| `OPENROUTER_MODEL` | LLM 模型名称 | `deepseek/deepseek-v3.2` | ❌ |
+| `EmbeddingModel` | Embedding 模型名称 | `baai/bge-m3` | ❌ |
+| `WHITELIST_EMBEDDING_MODEL_MAX_TOKEN` | 最大 Token 数 | `8000` | ❌ |
+| `DATABASE_URL` | 数据库 URL | `sqlite:///./emotional_companionship.db` | ❌ |
+
 ### 角色配置
 
-角色配置文件位于 `backend/app/characters/`，支持：
+角色配置文件位于 `backend/app/resources/characters/`，支持：
 - **基础角色**：传统配置，无需修改即可运行
 - **扩展角色**：添加扩展功能配置，启用高级特性
 
@@ -366,12 +394,9 @@ service.save_character(character)
 - **mentor**：导师，注重指导和知识分享
 - **friend**：朋友，轻松平等的交流
 
-
 ### 添加新角色
 
-1. 在 `backend/app/characters/` 创建新的 YAML 文件
+1. 在 `backend/app/resources/characters/` 创建新的 YAML 文件
 2. 从模板复制或从头定义
 3. 可选：添加扩展功能配置
 4. 重启后端服务自动加载
-
-
