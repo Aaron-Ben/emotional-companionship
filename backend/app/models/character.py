@@ -97,14 +97,3 @@ class UserCharacterPreference(BaseModel):
     created_at: str
     updated_at: str
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "user_id": "user_123",
-                "character_id": "sister_001",
-                "nickname": "亲爱的哥哥",
-                "style_level": 1.1,
-                "custom_instructions": "特别喜欢聊游戏相关的话题",
-                "relationship_notes": "关系很亲密，经常开玩笑"
-            }
-        }

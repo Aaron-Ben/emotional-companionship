@@ -11,16 +11,6 @@ class MessageContext(BaseModel):
     character_state: Dict[str, Any] = Field(default_factory=dict, description="Character's current internal state")
     initiate_topic: bool = Field(default=False, description="Whether character should initiate a topic")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "recent_conversation_summary": "User returned home after work",
-                "character_state": {
-                    "proactivity_level": 0.8
-                },
-                "initiate_topic": True
-            }
-        }
 
 
 class ChatRequest(BaseModel):
