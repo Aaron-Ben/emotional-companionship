@@ -9,6 +9,8 @@ import logging
 import httpx
 from tiktoken import get_encoding
 
+from app.services.chunk_text import chunk_text
+
 logger = logging.getLogger(__name__)
 
 # Configuration from environment
@@ -106,6 +108,87 @@ class EmbeddingService:
     def _count_tokens(self, text: str) -> int:
         """Count tokens in text using tiktoken."""
         return len(_encoding.encode(text))
+
+    @staticmethod
+    def _get_average_vector(vectors: List[List[float]]) -> Optional[List[float]]:
+        """
+        Calculate the average of multiple vectors.
+
+        Args:
+            vectors: List of vectors to average
+
+        Returns:
+            Averaged vector, or None if input is empty
+        """
+        if not vectors:
+            return None
+        if len(vectors) == 1:
+            return vectors[0]
+
+        dimension = len(vectors[0])
+        result = [0.0] * dimension
+
+        valid_count = 0
+        for vec in vectors:
+            if not vec or len(vec) != dimension:
+                continue
+            for i in range(dimension):
+                result[i] += vec[i]
+            valid_count += 1
+
+        if valid_count == 0:
+            return None
+
+        for i in range(dimension):
+            result[i] /= valid_count
+
+        return result
+
+    async def get_single_embedding(self, text: str) -> Optional[List[float]]:
+        """
+        Get a single embedding for text, with automatic chunking and averaging.
+
+        If text is too long, it will be split into chunks and the resulting
+        embeddings will be averaged.
+
+        Args:
+            text: Text to embed
+
+        Returns:
+            Single embedding vector, or None if failed
+        """
+        if not text:
+            logger.error("[Embedding] get_single_embedding was called with no text.")
+            return None
+
+        # 1. Split text into chunks to avoid exceeding limits
+        text_chunks = chunk_text(text, max_tokens=self.config.max_tokens)
+        if not text_chunks:
+            logger.error("[Embedding] Text chunking resulted in no chunks.")
+            return None
+
+        if len(text_chunks) > 1:
+            logger.info(
+                f"[Embedding] Text is too long, split into {len(text_chunks)} chunks for embedding."
+            )
+
+        # 2. Get embeddings for all chunks
+        try:
+            vectors = await self.get_embeddings_batch(text_chunks)
+        except Exception as e:
+            logger.error(f"[Embedding] Failed to get embeddings for chunks: {e}")
+            return None
+
+        if not vectors:
+            logger.error("[Embedding] No valid embedding vectors in the API response data.")
+            return None
+
+        # 3. Return single vector or average
+        if len(vectors) == 1:
+            return vectors[0]
+        else:
+            logger.info(f"[Embedding] Averaging {len(vectors)} vectors into one.")
+            return self._get_average_vector(vectors)
 
     async def _send_batch(
         self,
