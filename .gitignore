@@ -29,3 +29,5 @@ lerna-debug.log*
 frontend/package-lock.json
 backend/.env
 backend/app/services/diaries
+
+/data

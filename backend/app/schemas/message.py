@@ -17,6 +17,8 @@ class ChatRequest(BaseModel):
     """Request for character chat."""
     message: str = Field(..., description="User's message to the character")
     character_id: str = Field(default="sister_001", description="Character to chat with")
+    character_uuid: Optional[str] = Field(None, description="Character UUID (alternative to character_id)")
+    topic_id: Optional[int] = Field(None, description="Topic ID for continuing a conversation")
     conversation_history: Optional[List[Dict[str, str]]] = Field(
         None, description="Previous conversation messages for context"
     )
@@ -40,6 +42,8 @@ class ChatResponse(BaseModel):
     """Response from character chat."""
     message: str = Field(..., description="Character's response message")
     character_id: str = Field(..., description="Character that generated the response")
+    character_uuid: Optional[str] = Field(None, description="Character UUID")
+    topic_id: Optional[int] = Field(None, description="Topic ID for the conversation")
     context_used: Optional[MessageContext] = Field(None, description="Context information used")
     timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
 

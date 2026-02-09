@@ -3,15 +3,32 @@
 import { API_ENDPOINTS, apiRequest } from './api';
 import type { ChatRequest, ChatResponse } from '../types/chat';
 
-export async function sendMessage(request: ChatRequest): Promise<ChatResponse> {
+interface SendMessageOptions {
+  topic_id?: number;
+  character_uuid?: string;
+}
+
+export async function sendMessage(
+  request: ChatRequest,
+  options?: SendMessageOptions
+): Promise<ChatResponse> {
+  const body: Record<string, unknown> = {
+    message: request.message,
+    character_id: request.character_id,
+    conversation_history: request.conversation_history,
+    stream: false,
+  };
+
+  if (options?.topic_id !== undefined) {
+    body.topic_id = options.topic_id;
+  }
+  if (options?.character_uuid) {
+    body.character_uuid = options.character_uuid;
+  }
+
   return apiRequest<ChatResponse>(API_ENDPOINTS.chat(), {
     method: 'POST',
-    body: JSON.stringify({
-      message: request.message,
-      character_id: request.character_id,
-      conversation_history: request.conversation_history,
-      stream: false,
-    }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -30,19 +47,29 @@ export async function getChatStarter(characterId: string = 'sister_001') {
  * Returns an async generator that yields chunks of the response
  */
 export async function* sendMessageStream(
-  request: ChatRequest
+  request: ChatRequest,
+  options?: SendMessageOptions
 ): AsyncGenerator<string, void, unknown> {
+  const body: Record<string, unknown> = {
+    message: request.message,
+    character_id: request.character_id,
+    conversation_history: request.conversation_history,
+    stream: true,
+  };
+
+  if (options?.topic_id !== undefined) {
+    body.topic_id = options.topic_id;
+  }
+  if (options?.character_uuid) {
+    body.character_uuid = options.character_uuid;
+  }
+
   const response = await fetch(API_ENDPOINTS.chatStream(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      message: request.message,
-      character_id: request.character_id,
-      conversation_history: request.conversation_history,
-      stream: true,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {

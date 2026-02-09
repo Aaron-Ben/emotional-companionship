@@ -21,6 +21,16 @@ export const API_ENDPOINTS = {
   // TTS endpoints
   tts: () => `${API_BASE_URL}/api/v1/chat/tts`,
   ttsAudio: (filename: string) => `${API_BASE_URL}/api/v1/chat/tts/audio/${filename}`,
+
+  // Topic endpoints
+  topicList: (characterUuid?: string) =>
+    `${API_BASE_URL}/api/v1/chat/topics${characterUuid ? `?character_uuid=${characterUuid}` : ''}`,
+  topicCreate: () => `${API_BASE_URL}/api/v1/chat/topics`,
+  topicDelete: (id: number) => `${API_BASE_URL}/api/v1/chat/topics/${id}`,
+  topicHistory: (id: number, characterUuid?: string) =>
+    `${API_BASE_URL}/api/v1/chat/topics/${id}/history${characterUuid ? `?character_uuid=${characterUuid}` : ''}`,
+  topicMapping: (characterId: string) =>
+    `${API_BASE_URL}/api/v1/chat/topics/mappings/resolve?character_id=${characterId}`,
 } as const;
 
 export async function apiRequest<T>(

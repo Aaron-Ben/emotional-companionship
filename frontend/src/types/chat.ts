@@ -96,3 +96,49 @@ export interface TTSResponse {
   error?: string;
   engine: string;
 }
+
+// Topic types for chat history management
+export interface Topic {
+  topic_id: number;
+  character_uuid: string;
+  created_at: Date;
+  updated_at: Date;
+  message_count: number;
+}
+
+export interface TopicListItem {
+  topic: Topic;
+  preview: string;
+  timeAgo: string;
+}
+
+export interface ChatMessageResponse {
+  message_id: string;
+  role: string;
+  content: string;
+  timestamp: Date;
+}
+
+export interface TopicResponse {
+  topic_id: number;
+  character_uuid: string;
+  created_at: Date;
+  updated_at: Date;
+  message_count: number;
+}
+
+export interface TopicListResponse {
+  topics: TopicResponse[];
+  total: number;
+}
+
+export interface ChatHistoryResponse {
+  topic_id: number;
+  messages: ChatMessageResponse[];
+  total: number;
+}
+
+export interface CharacterMappingResponse {
+  character_uuid: string;
+  character_id: string;
+}

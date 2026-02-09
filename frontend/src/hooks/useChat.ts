@@ -8,7 +8,19 @@ import type { DisplayMessage, ChatRequest, Message, CurrentTurn } from '../types
 const DEFAULT_CHARACTER_ID = 'sister_001';
 const STORAGE_KEY = 'chat_history';
 
-export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
+interface UseChatOptions {
+  characterId?: string;
+  topicId?: number;
+  characterUuid?: string;
+}
+
+export function useChat(options?: UseChatOptions) {
+  const {
+    characterId = DEFAULT_CHARACTER_ID,
+    topicId,
+    characterUuid,
+  } = options || {};
+
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState('');
@@ -22,19 +34,22 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
     timestamp: new Date(),
   });
 
-  // Load history from localStorage on mount
+  // Load history from localStorage on mount (only if no topic is set)
   useState(() => {
-    try {
-      const stored = localStorage.getItem(`${STORAGE_KEY}_${characterId}`);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setMessages(parsed.map((msg: any) => ({
-          ...msg,
-          timestamp: new Date(msg.timestamp),
-        })));
+    // Only load from localStorage if we're not using topics
+    if (!topicId) {
+      try {
+        const stored = localStorage.getItem(`${STORAGE_KEY}_${characterId}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setMessages(parsed.map((msg: any) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp),
+          })));
+        }
+      } catch (err) {
+        console.error('Failed to load chat history:', err);
       }
-    } catch (err) {
-      console.error('Failed to load chat history:', err);
     }
   });
 
@@ -88,7 +103,10 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
     };
 
     try {
-      const response = await sendMessage(request);
+      const response = await sendMessage(request, {
+        topic_id: topicId,
+        character_uuid: characterUuid || undefined,
+      });
 
       const assistantMessage: DisplayMessage = {
         id: `assistant-${Date.now()}`,
@@ -103,7 +121,7 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
     } finally {
       setLoading(false);
     }
-  }, [messages, characterId, loading, addMessage]);
+  }, [messages, characterId, topicId, characterUuid, loading, addMessage]);
 
   const sendStream = useCallback(async (content: string) => {
     if (!content.trim() || loading) return;
@@ -146,7 +164,10 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
 
     try {
       let fullResponse = '';
-      for await (const chunk of sendMessageStream(request)) {
+      for await (const chunk of sendMessageStream(request, {
+        topic_id: topicId,
+        character_uuid: characterUuid || undefined,
+      })) {
         fullResponse += chunk;
         setStreamingMessage(fullResponse);
         setMessages((prev) => prev.map((msg) =>
@@ -172,11 +193,14 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
       setLoading(false);
       setStreamingMessage('');
     }
-  }, [messages, characterId, loading, addMessage, saveHistory]);
+  }, [messages, characterId, topicId, characterUuid, loading, addMessage, saveHistory]);
 
   const clearHistory = useCallback(() => {
     setMessages([]);
-    localStorage.removeItem(`${STORAGE_KEY}_${characterId}`);
+    // Only clear localStorage if we're not using topics
+    if (!topicId) {
+      localStorage.removeItem(`${STORAGE_KEY}_${characterId}`);
+    }
     // Reset current turn
     setCurrentTurn({
       phase: 'user_input',
@@ -184,7 +208,7 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
       aiMessage: '',
       timestamp: new Date(),
     });
-  }, [characterId]);
+  }, [characterId, topicId]);
 
   const getStarter = useCallback(async () => {
     try {
@@ -236,7 +260,10 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
 
     try {
       let fullResponse = '';
-      for await (const chunk of sendMessageStream(request)) {
+      for await (const chunk of sendMessageStream(request, {
+        topic_id: topicId,
+        character_uuid: characterUuid || undefined,
+      })) {
         fullResponse += chunk;
         // Update current turn with streaming response
         setCurrentTurn((prev) => ({
@@ -269,7 +296,7 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
     } finally {
       setLoading(false);
     }
-  }, [messages, characterId, loading, addMessage]);
+  }, [messages, characterId, topicId, characterUuid, loading, addMessage]);
 
   // RPG style: Start a new conversation turn
   const startNewTurn = useCallback(() => {
@@ -289,6 +316,17 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
       console.error('TTS playback failed:', err);
     }
   }, [characterId]);
+
+  // Set messages directly (used when loading topic history)
+  const setMessagesDirect = useCallback((newMessages: DisplayMessage[]) => {
+    setMessages(newMessages);
+  }, []);
+
+  // Get current topic ID
+  const getCurrentTopicId = useCallback(() => topicId, [topicId]);
+
+  // Get current character UUID
+  const getCurrentCharacterUuid = useCallback(() => characterUuid, [characterUuid]);
 
   // TTS auto-play state and effect
   const [autoPlayTTS, setAutoPlayTTS] = useState(() => {
@@ -340,5 +378,9 @@ export function useChat(characterId: string = DEFAULT_CHARACTER_ID) {
     autoPlayTTS,
     toggleAutoPlayTTS,
     playTTS,
+    // Topic support
+    setMessages: setMessagesDirect,
+    getCurrentTopicId,
+    getCurrentCharacterUuid,
   };
 }
