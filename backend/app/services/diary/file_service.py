@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 # 默认日记根目录
-DEFAULT_DIARY_ROOT = Path(__file__).parent.parent.parent / "data" / "diary"
+DEFAULT_DIARY_ROOT = Path(__file__).parent.parent.parent.parent.parent / "data" / "diary"
 
 # 忽略的文件夹列表
 IGNORED_FOLDERS = ['MusicDiary']

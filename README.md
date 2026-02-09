@@ -4,6 +4,13 @@
 
 ## 功能特性
 
+### 💬 双模式对话
+- **RPG 风格对话**：沉浸式角色扮演体验
+- **传统聊天模式**：经典消息列表界面
+- **流式响应**：实时交互体验
+- **语音输入**：支持中英日韩粤语识别
+- **语音合成**：TTS 语音输出
+
 ### 🎭 角色定制
 - 支持自定义 AI 角色性格、行为偏好
 - 角色模板系统，快速创建不同类型的陪伴角色
@@ -48,7 +55,13 @@
 - 支持多轮对话历史记录
 - 情绪检测与状态管理
 
-### 🔍 向量搜索 (NEW!)
+### 📚 主题管理
+- **对话历史分组**：按主题自动组织对话
+- **快速切换**：在不同话题间无缝切换
+- **归档功能**：保存和管理历史对话
+- **动态创建**：随时开始新话题
+
+### 🔍 向量搜索
 - **智能检索**：基于语义向量的日记内容检索
 - **时间表达式解析**：支持"上周"、"3天前"等自然语言时间查询
 - **标签系统**：自动提取和关联标签
@@ -107,71 +120,97 @@ emotional-companionship/
 │   ├── app/
 │   │   ├── api/               # API 路由
 │   │   │   └── v1/
-│   │   │       ├── chat.py    # 对话接口
-│   │   │       ├── character.py  # 角色管理
-│   │   │       ├── diary.py   # 日记接口
-│   │   │       └── character_extensions.py  # 扩展功能接口
+│   │   │       ├── chat.py          # 对话接口
+│   │   │       ├── character.py     # 角色管理
+│   │   │       ├── diary.py         # 日记接口
+│   │   │       ├── character_extensions.py  # 扩展功能接口
+│   │   │       └── chat_history.py  # 对话历史接口
 │   │   ├── config/            # 配置模块
 │   │   │   └── time_expressions.py  # 时间表达式配置
 │   │   ├── models/            # 数据模型
-│   │   │   ├── character.py   # 角色模型
+│   │   │   ├── character.py           # 角色模型
 │   │   │   ├── character_extensions.py  # 扩展功能模型
-│   │   │   └── database.py    # 数据库配置 (新增 chunks, tags, file_tags, kv_store)
+│   │   │   └── database.py            # 数据库配置
 │   │   ├── schemas/           # Pydantic 模型
 │   │   ├── services/          # 业务逻辑
-│   │   │   ├── chat_service.py      # 对话服务
-│   │   │   ├── character_service.py # 角色服务
-│   │   │   ├── embedding.py         # Embedding 服务 (OpenRouter)
-│   │   │   ├── chunk_text.py        # 文本分块服务
-│   │   │   ├── time_parser.py       # 时间表达式解析
-│   │   │   ├── character_extensions/  # 扩展功能服务
+│   │   │   ├── chat_service.py         # 对话服务
+│   │   │   ├── character_service.py    # 角色服务
+│   │   │   ├── embedding.py            # Embedding 服务
+│   │   │   ├── chunk_text.py           # 文本分块服务
+│   │   │   ├── time_parser.py          # 时间表达式解析
+│   │   │   ├── vector_db.py            # 向量数据库服务
+│   │   │   ├── character_extensions/   # 扩展功能服务
 │   │   │   │   ├── extended_character_service.py
-│   │   │   │   ├── conversation_depth_service.py  # 对话深度
-│   │   │   │   ├── memory_continuity_service.py   # 记忆系统
-│   │   │   │   ├── emotional_authenticity_service.py  # 情感系统
-│   │   │   │   ├── practical_features_service.py  # 实用功能
-│   │   │   │   └── archetype_service.py  # 角色模板
-│   │   │   └── diary/         # 日记服务
-│   │   │       └── file_service.py  # 文件系统日记服务
-│   │   ├── characters/        # 角色模块
-│   │   │   ├── asr.py         # 语音识别
-│   │   │   └── tts.py         # 语音合成
-│   │   ├── resources/         # 资源文件
-│   │   │   ├── characters/    # 角色配置
-│   │   │   │   ├── sister.yaml  # 基础角色
-│   │   │   │   └── sister_v2.yaml  # 扩展角色示例
-│   │   │   └── archetypes/    # 角色模板
+│   │   │   │   ├── conversation_depth_service.py
+│   │   │   │   ├── memory_continuity_service.py
+│   │   │   │   ├── emotional_authenticity_service.py
+│   │   │   │   ├── practical_features_service.py
+│   │   │   │   └── archetype_service.py
+│   │   │   └── diary/                  # 日记服务
+│   │   │       └── file_service.py     # 文件系统日记服务
+│   │   ├── characters/          # 角色模块
+│   │   │   ├── asr.py           # 语音识别
+│   │   │   └── tts.py           # 语音合成
+│   │   ├── resources/           # 资源文件
+│   │   │   ├── characters/      # 角色配置
+│   │   │   │   ├── sister.yaml      # 基础角色
+│   │   │   │   └── sister_v2.yaml    # 扩展角色示例
+│   │   │   └── archetypes/      # 角色模板
 │   │   │       ├── emotional_companion.yaml
 │   │   │       ├── mentor.yaml
 │   │   │       └── friend.yaml
-│   │   └── main.py            # 应用入口
-│   ├── model/                 # AI 模型文件
-│   │   └── ASR/               # 语音识别模型
+│   │   └── main.py              # 应用入口
+│   ├── model/                   # AI 模型文件
+│   │   └── ASR/                 # 语音识别模型
 │   │       └── sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/
-│   ├── tests/                 # 测试文件
-│   ├── .env                   # 环境变量配置
-│   ├── .env.example           # 环境变量示例
-│   ├── migrate_extensions.py  # 数据库迁移脚本
-│   └── requirements.txt       # Python 依赖
+│   ├── tests/                   # 测试文件
+│   ├── .env                     # 环境变量配置
+│   ├── .env.example             # 环境变量示例
+│   ├── migrate_extensions.py    # 数据库迁移脚本
+│   └── requirements.txt         # Python 依赖
 │
-├── frontend/                  # 前端应用
+├── frontend/                    # 前端应用
 │   ├── src/
-│   │   ├── components/        # React 组件
-│   │   │   ├── chat/         # 对话组件
-│   │   │   ├── character/    # 角色组件
-│   │   │   ├── diary/        # 日记组件
-│   │   │   └── ui/           # UI 组件
-│   │   ├── pages/            # 页面组件
-│   │   │   └── ChatPage.tsx  # 对话页面
-│   │   ├── hooks/            # 自定义 Hooks
-│   │   │   ├── useChat.ts    # 对话 Hook
-│   │   │   └── useCharacter.ts
-│   │   ├── services/         # API 服务
-│   │   │   └── voiceService.ts  # 语音输入服务
-│   │   └── types/            # TypeScript 类型
-│   └── package.json          # Node 依赖
+│   │   ├── components/          # React 组件
+│   │   │   ├── chat/           # 对话组件
+│   │   │   │   ├── MessageList.tsx
+│   │   │   │   ├── MessageBubble.tsx
+│   │   │   │   ├── ChatInput.tsx
+│   │   │   │   ├── DialogueHeader.tsx
+│   │   │   │   ├── TraditionalChatPanel.tsx
+│   │   │   │   ├── RPGChatPanel.tsx
+│   │   │   │   └── ControlButtons.tsx
+│   │   │   ├── character/      # 角色组件
+│   │   │   ├── diary/          # 日记组件
+│   │   │   │   ├── DiaryListModal.tsx
+│   │   │   │   ├── DiaryDetailModal.tsx
+│   │   │   │   ├── DiaryCard.tsx
+│   │   │   │   └── DiaryTimeline.tsx
+│   │   │   ├── topics/         # 主题组件
+│   │   │   │   ├── TopicSidebar.tsx
+│   │   │   │   └── TopicCard.tsx
+│   │   │   └── ui/             # UI 组件
+│   │   ├── pages/              # 页面组件
+│   │   │   └── ChatPage.tsx    # 主页面
+│   │   ├── hooks/              # 自定义 Hooks
+│   │   │   ├── useChat.ts
+│   │   │   ├── useCharacter.ts
+│   │   │   ├── useTopics.ts
+│   │   │   └── useChatStyle.ts
+│   │   ├── services/           # API 服务
+│   │   │   ├── chatService.ts
+│   │   │   ├── characterService.ts
+│   │   │   ├── diaryService.ts
+│   │   │   ├── topicService.ts
+│   │   │   ├── voiceService.ts
+│   │   │   └── ttsService.ts
+│   │   └── types/              # TypeScript 类型
+│   └── package.json            # Node 依赖
 │
-└── README.md                 # 项目文档
+├── data/                       # 数据目录
+│   └── diary/                  # 日记存储 (项目根目录)
+│
+└── README.md                   # 项目文档
 ```
 
 ## 快速开始
@@ -264,18 +303,20 @@ npm run dev
 ### 核心 API 端点
 
 #### 对话
-- `POST /api/v1/chat/` - 发送消息
-- `POST /api/v1/chat/stream` - 流式对话
-- `POST /api/v1/chat/starter` - 获取对话开场
+- `POST /api/v1/chat/` - 发送消息（流式响应）
 - `POST /api/v1/chat/voice` - 语音识别
-- `POST /api/v1/chat/voice/chat` - 语音识别+对话
 - `POST /api/v1/chat/tts` - 文字转语音
 - `GET /api/v1/chat/tts/audio/{filename}` - 获取生成的语音文件
+- `POST /api/v1/chat/memo` - 记忆功能
+- `GET /api/v1/chat/phases` - 获取对话阶段
+- `POST /api/v1/chat/ask-phases` - 询问对话阶段
 
 #### 角色
 - `GET /api/v1/character/` - 获取角色列表
 - `GET /api/v1/character/{id}` - 获取角色详情
-- `POST /api/v1/character/{id}/preference` - 设置偏好
+- `PUT /api/v1/character/preferences` - 更新用户偏好
+- `GET /api/v1/character/preferences` - 获取用户偏好
+- `POST /api/v1/character/starters` - 获取对话开场白
 
 #### 扩展功能
 - `GET /api/v1/character/extensions/{id}/state` - 获取扩展状态
@@ -290,11 +331,19 @@ npm run dev
 - `GET /api/v1/diary/list` - 获取日记列表
 - `GET /api/v1/diary/latest` - 获取最新日记
 - `GET /api/v1/diary/names` - 获取日记本名称列表
-- `GET /api/v1/diary/sync` - 同步文件系统到数据库
+- `POST /api/v1/diary/sync` - 同步文件系统到数据库
 - `GET /api/v1/diary/{path}` - 根据路径获取日记详情
 - `POST /api/v1/diary/create` - 创建日记
 - `POST /api/v1/diary/ai-update` - AI 更新日记（查找替换）
 - `DELETE /api/v1/diary/{path}` - 删除日记
+
+#### 对话历史
+- `POST /api/v1/chat_history/` - 创建新的对话历史
+- `GET /api/v1/chat_history/topic/{topic_id}` - 获取特定对话历史
+- `PUT /api/v1/chat_history/topic/{topic_id}` - 更新对话历史
+- `DELETE /api/v1/chat_history/topic/{topic_id}` - 删除对话历史
+- `GET /api/v1/chat_history/topics` - 获取所有对话历史
+- `POST /api/v1/chat_history/archive/{topic_id}` - 归档对话历史
 
 ## 扩展功能使用指南
 
@@ -380,6 +429,9 @@ service.save_character(character)
 | `EmbeddingModel` | Embedding 模型名称 | `baai/bge-m3` | ❌ |
 | `WHITELIST_EMBEDDING_MODEL_MAX_TOKEN` | 最大 Token 数 | `8000` | ❌ |
 | `DATABASE_URL` | 数据库 URL | `sqlite:///./emotional_companionship.db` | ❌ |
+| `DIARY_ROOT_PATH` | 日记存储路径 | `data/diary` | ❌ |
+| `DEFAULT_TIMEZONE` | 默认时区 | `Asia/Shanghai` | ❌ |
+| `TAG_VECTORIZE_CONCURRENCY` | 标签向量并发数 | `5` | ❌ |
 
 ### 角色配置
 
