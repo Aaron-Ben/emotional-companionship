@@ -1,16 +1,16 @@
 /** Main chat page component - RPG dialogue style with topic sidebar */
 
 import React, { useState, useCallback } from 'react';
-import { RPGChatPanel } from '../components/conversation';
-import { FloatingActionButton } from '../components/ui';
+import { RPGChatPanel, TraditionalChatPanel } from '../components/conversation';
+import { FloatingActionButton, ChatStyleToggle } from '../components/ui';
 import { DiaryListModal, DiaryDetailModal, DiaryEditModal } from '../components/diary';
 import { TopicSidebar } from '../components/topics';
 import { useChat } from '../hooks/useChat';
 import { useTopics } from '../hooks/useTopics';
+import { useChatStyle } from '../hooks/useChatStyle';
 import backgroundImage from '/background/image.png';
 import type { DiaryEntry } from '../services/diaryService';
 import type { DisplayMessage } from '../types/chat';
-import '../assets/styles/topic-sidebar.css';
 
 const CHARACTER_ID = 'sister_001';
 
@@ -48,9 +48,10 @@ export const ChatPage: React.FC = () => {
   // Chat functionality with topic support
   const {
     currentTurn,
+    messages,
     loading,
+    streamingMessage,
     submitUserMessage,
-    startNewTurn,
     clearHistory,
     autoPlayTTS,
     toggleAutoPlayTTS,
@@ -61,6 +62,9 @@ export const ChatPage: React.FC = () => {
     topicId: currentTopicId ?? undefined,
     characterUuid: characterUuid ?? undefined,
   });
+
+  // Chat style management
+  const { style: chatStyle, toggleStyle: toggleChatStyle } = useChatStyle();
 
   // Handle topic selection
   async function handleTopicChange(topicId: number | null, topicMessages: DisplayMessage[]) {
@@ -98,6 +102,12 @@ export const ChatPage: React.FC = () => {
     if (userInput.trim()) {
       submitUserMessage(userInput.trim());
       setUserInput('');
+    }
+  };
+
+  const handleSendMessage = (content: string) => {
+    if (content.trim()) {
+      submitUserMessage(content.trim());
     }
   };
 
@@ -146,39 +156,56 @@ export const ChatPage: React.FC = () => {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col relative">
-        {/* Empty space for future content */}
-        <div className="flex-1 overflow-y-auto">
-          {/* Content can be added here if needed */}
-        </div>
-
-        {/* RPG Style Control Panel - Fixed at bottom */}
-        <RPGChatPanel
-          phase={currentTurn.phase}
-          userInput={userInput}
-          aiResponse={currentTurn.aiMessage}
-          isStreaming={loading}
-          onUserInputChange={setUserInput}
-          onSend={handleSend}
-          onNewTurn={startNewTurn}
-          placeholder="和妹妹聊聊天吧～"
-          onVoiceInputStart={handleVoiceInputStart}
-          onVoiceInputEnd={handleVoiceInputEnd}
-          onPlayTTS={playTTS}
+        {/* Chat Style Toggle Button */}
+        <ChatStyleToggle
+          currentStyle={chatStyle}
+          onToggle={toggleChatStyle}
         />
 
+        {/* Conditional Chat Panel based on style */}
+        {chatStyle === 'rpg' ? (
+          <>
+            {/* Empty space for RPG style */}
+            <div className="flex-1 overflow-y-auto">
+              {/* Content can be added here if needed */}
+            </div>
+
+            {/* RPG Style Control Panel - Fixed at bottom */}
+            <RPGChatPanel
+              phase={currentTurn.phase}
+              userInput={userInput}
+              aiResponse={currentTurn.aiMessage}
+              isStreaming={loading}
+              onUserInputChange={setUserInput}
+              onSend={handleSend}
+              placeholder="和妹妹聊聊天吧～"
+              onVoiceInputStart={handleVoiceInputStart}
+              onVoiceInputEnd={handleVoiceInputEnd}
+              onPlayTTS={playTTS}
+            />
+          </>
+        ) : (
+          /* Traditional Style Chat Panel - Full height */
+          <TraditionalChatPanel
+            messages={messages}
+            loading={loading}
+            streamingMessage={streamingMessage}
+            onSendMessage={handleSendMessage}
+            onVoiceInputStart={handleVoiceInputStart}
+            onVoiceInputEnd={handleVoiceInputEnd}
+            placeholder="和妹妹聊聊天吧～"
+          />
+        )}
+
         {/* TTS Toggle */}
-        <div className="fixed bottom-4 left-4 z-50">
+        <div className="fixed top-[72px] right-4 z-50">
           <button
             onClick={() => toggleAutoPlayTTS(!autoPlayTTS)}
-            className={`px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 transition-all ${
-              autoPlayTTS
-                ? 'bg-purple-600 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold cursor-pointer transition-all duration-300 border-2 shadow-lg hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0 bg-gradient-to-r from-pink-300 to-pink-500 border-pink-200 text-white shadow-pink-300/30 hover:from-pink-500 hover:to-pink-600 hover:shadow-pink-400/40"
             title={autoPlayTTS ? '关闭自动播放' : '开启自动播放'}
+            type="button"
           >
-            <span>{autoPlayTTS ? '🔊' : '🔇'}</span>
-            <span className="text-sm font-medium">
+            <span className="text-[13px] font-semibold hidden md:inline">
               {autoPlayTTS ? '语音开启' : '语音关闭'}
             </span>
           </button>

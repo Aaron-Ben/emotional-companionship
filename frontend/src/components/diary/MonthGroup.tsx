@@ -1,4 +1,4 @@
-/** Month group component for displaying diaries grouped by month */
+/** Month group component for displaying diaries grouped by month - Refined elegant style */
 
 import React from 'react';
 import { DiaryGroup, DiaryEntry, extractDateFromPath } from '../../services/diaryService';
@@ -20,28 +20,50 @@ export const MonthGroup: React.FC<MonthGroupProps> = ({
   onDeleteDiary,
 }) => {
   return (
-    <div id={`month-${group.year}-${group.month}`} className="month-group">
+    <div id={`month-${group.year}-${group.month}`} className="mb-6 animate-fade-in">
       {/* Month header */}
       <div
-        className={`month-header ${group.expanded ? 'expanded' : ''}`}
+        className={`
+          flex items-center justify-between px-4 py-3 mb-3 rounded-2xl cursor-pointer transition-all duration-200 select-none
+          ${group.expanded
+            ? 'bg-gradient-to-r from-rose-400 to-rose-500 text-white shadow-sm'
+            : 'bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 hover:border-rose-200 dark:hover:border-rose-800'
+          }
+        `}
         onClick={onToggle}
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-xl">{group.expanded ? '▼' : '▶'}</span>
-            <span className="text-lg font-bold">{group.monthLabel}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm opacity-75">{group.count}篇日记</span>
-          </div>
+        <div className="flex items-center gap-3">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            className={clsx('transition-transform duration-200', group.expanded ? 'rotate-90' : '')}
+          >
+            <path d="M9 18l6-6-6-6"/>
+          </svg>
+          <span className="font-semibold">{group.monthLabel}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={clsx(
+            'text-sm',
+            group.expanded ? 'text-white/80' : 'text-neutral-400'
+          )}>
+            {group.count}篇日记
+          </span>
         </div>
       </div>
 
       {/* Diary list wrapper with animation */}
       <div
-        className={`diary-list-wrapper ${group.expanded ? 'expanded' : 'collapsed'}`}
+        className={`
+          overflow-hidden transition-all duration-300 ease-out
+          ${group.expanded ? 'max-h-[5000px] opacity-100' : 'max-h-0 opacity-0'}
+        `}
       >
-        <div className="diary-list">
+        <div>
           {group.diaries
             .sort((a, b) => extractDateFromPath(b.path).getTime() - extractDateFromPath(a.path).getTime())
             .map((diary) => (
@@ -58,3 +80,8 @@ export const MonthGroup: React.FC<MonthGroupProps> = ({
     </div>
   );
 };
+
+// Helper for clsx
+function clsx(...classes: (string | boolean | undefined | null)[]) {
+  return classes.filter(Boolean).join(' ');
+}

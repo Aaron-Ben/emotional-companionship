@@ -1,8 +1,9 @@
-/** User Input Area Component */
+/** User Input Area Component - Refined elegant style */
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { AudioRecorder, recognizeFromBlob } from '../../services/voiceService';
 import type { RecordingState } from '../../types/chat';
+import { clsx } from 'clsx';
 
 interface UserInputAreaProps {
   value: string;
@@ -69,7 +70,7 @@ export const UserInputArea: React.FC<UserInputAreaProps> = ({
     }
   };
 
-  // 按下按钮开始录音
+  // Voice input start
   const handleVoiceStart = useCallback(async () => {
     if (disabled || isStreaming) return;
 
@@ -86,7 +87,7 @@ export const UserInputArea: React.FC<UserInputAreaProps> = ({
     }
   }, [disabled, isStreaming, onVoiceInputStart]);
 
-  // 松开按钮停止录音并识别
+  // Voice input end
   const handleVoiceEnd = useCallback(async () => {
     if (recordingState !== 'recording' || !recorderRef.current) return;
 
@@ -112,7 +113,7 @@ export const UserInputArea: React.FC<UserInputAreaProps> = ({
     }
   }, [recordingState, value, onChange, onVoiceInputEnd]);
 
-  // 格式化录音时间
+  // Format recording time
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -120,10 +121,10 @@ export const UserInputArea: React.FC<UserInputAreaProps> = ({
   };
 
   return (
-    <div className="user-input-area">
+    <div className="p-6">
       <textarea
         ref={textareaRef}
-        className="rpg-textarea"
+        className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-900/50 border-2 border-neutral-200 dark:border-neutral-700 rounded-2xl text-base text-neutral-800 dark:text-neutral-100 placeholder:text-neutral-400 resize-none outline-none focus:border-rose-400 dark:focus:border-rose-500 focus:shadow-sm transition-all duration-200 min-h-[48px] max-h-[120px]"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
@@ -131,10 +132,16 @@ export const UserInputArea: React.FC<UserInputAreaProps> = ({
         disabled={disabled || recordingState === 'recording'}
         rows={1}
       />
-      <div className="user-input-actions">
-        {/* Voice input button - 按住说话 */}
+      <div className="flex items-center gap-3 mt-4 justify-end">
+        {/* Voice input button */}
         <button
-          className={`rpg-btn rpg-btn-voice ${recordingState === 'recording' ? 'recording' : ''}`}
+          className={clsx(
+            'px-5 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 flex items-center gap-2 active:scale-[0.98]',
+            recordingState === 'recording'
+              ? 'bg-rose-400 hover:bg-rose-500 text-white'
+              : 'bg-emerald-400 hover:bg-emerald-500 dark:bg-emerald-500 dark:hover:bg-emerald-600 text-white',
+            'disabled:opacity-50 disabled:cursor-not-allowed'
+          )}
           onMouseDown={handleVoiceStart}
           onMouseUp={handleVoiceEnd}
           onMouseLeave={handleVoiceEnd}
@@ -150,18 +157,24 @@ export const UserInputArea: React.FC<UserInputAreaProps> = ({
         >
           {recordingState === 'recording' ? (
             <>
-              <span className="recording-icon">🎤</span>
-              <span className="recording-time">{formatTime(recordingTime)}</span>
+              <span>🎤</span>
+              <span className="text-sm font-semibold tabular-nums">{formatTime(recordingTime)}</span>
             </>
           ) : recordingState === 'processing' ? (
-            <span className="processing">...</span>
+            <>
+              <span className="animate-spin">⌛</span>
+              <span className="text-sm">识别中...</span>
+            </>
           ) : (
-            <span>🎤</span>
+            <>
+              <span>🎤</span>
+              <span className="text-sm">按住说话</span>
+            </>
           )}
         </button>
         {showSendButton && (
           <button
-            className="rpg-btn rpg-btn-primary"
+            className="px-6 py-2.5 bg-gradient-to-r from-rose-400 to-rose-500 hover:from-rose-500 hover:to-rose-600 text-white rounded-xl font-medium text-sm shadow-sm hover:shadow-md transition-all duration-200 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
             onClick={onSend}
             disabled={!canSend || isStreaming || recordingState !== 'idle'}
           >

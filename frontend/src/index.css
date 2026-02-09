@@ -1,5 +1,5 @@
-/* Import anime theme - must come first */
-@import './assets/styles/anime-theme.css';
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
 /* Tailwind CSS */
 @tailwind base;
@@ -7,30 +7,64 @@
 @tailwind utilities;
 
 /* Base styles */
-:root {
-  font-family: 'Nunito', Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color-scheme: light;
-  color: var(--text-primary);
-  background-color: var(--bg-primary);
+@layer base {
+  :root {
+    font-family: 'Noto Sans SC', 'Plus Jakarta Sans', sans-serif;
+    line-height: 1.5;
+    font-weight: 400;
+    color-scheme: light;
+    color: theme('colors.neutral.800');
+    background-color: theme('colors.white');
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .dark {
+    color-scheme: dark;
+    color: theme('colors.neutral.100');
+    background-color: theme('colors.neutral.900');
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
 }
 
-* {
-  box-sizing: border-box;
-}
+/* Component styles */
+@layer components {
+  /* Scrollbar elegant utility */
+  .scrollbar-elegant {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(244, 63, 94, 0.3) transparent;
+  }
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-}
+  .scrollbar-elegant::-webkit-scrollbar {
+    width: 6px;
+  }
 
-#root {
-  min-height: 100vh;
+  .scrollbar-elegant::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-elegant::-webkit-scrollbar-thumb {
+    background-color: rgba(244, 63, 94, 0.3);
+    border-radius: 3px;
+  }
+
+  .scrollbar-elegant::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(244, 63, 94, 0.5);
+  }
 }
