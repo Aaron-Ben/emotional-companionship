@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 
 from app.services.diary.file_service import DiaryFileService
 from app.models.diary import DiaryEntry
-from app.models.database import SessionLocal, DiaryFileTable
 
 
 # Create router

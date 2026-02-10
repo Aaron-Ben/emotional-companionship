@@ -13,7 +13,6 @@ from app.schemas.chat_history import (
     ChatMessageResponse,
     DeleteTopicResponse
 )
-from app.models.chat import ChatMessage
 from datetime import datetime
 
 # Create router

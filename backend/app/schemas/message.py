@@ -75,7 +75,6 @@ class VoiceResponse(BaseModel):
         json_schema_extra = {
             "example": {
                 "text": "你好啊",
-                "emotion": "[开心]",
                 "event": None,
                 "success": True
             }

@@ -26,16 +26,6 @@ class UserPreferenceCreate(BaseModel):
     custom_instructions: Optional[str] = Field(None, description="Additional instructions for the character")
     relationship_notes: Optional[str] = Field(None, description="Notes about the relationship context")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "character_id": "sister_001",
-                "nickname": "亲爱的哥哥",
-                "style_level": 1.1,
-                "custom_instructions": "特别喜欢聊游戏相关的话题",
-                "relationship_notes": "关系很亲密，经常开玩笑"
-            }
-        }
 
 
 class UserPreferenceUpdate(BaseModel):
@@ -46,14 +36,6 @@ class UserPreferenceUpdate(BaseModel):
     custom_instructions: Optional[str] = Field(None, description="New instructions")
     relationship_notes: Optional[str] = Field(None, description="New notes")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "character_id": "sister_001",
-                "nickname": "最爱的哥哥",
-                "style_level": 0.85
-            }
-        }
 
 
 class UserPreferenceResponse(BaseModel):
@@ -65,12 +47,6 @@ class ConversationStarterRequest(BaseModel):
     """Request for a conversation starter."""
     character_id: str = Field(default="sister_001", description="Character to get starter for")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "character_id": "sister_001"
-            }
-        }
 
 
 class ConversationStarterResponse(BaseModel):

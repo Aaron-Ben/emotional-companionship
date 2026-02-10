@@ -472,9 +472,6 @@ async def voice_input(
     Returns:
         Recognized text with optional emotion and event markers
 
-    Example emotion markers: [开心], [伤心], [愤怒], [厌恶], [惊讶]
-    Example event markers: [鼓掌], [大笑], [哭], [打喷嚏], [咳嗽], [深呼吸]
-
     The audio should be in WAV format with:
     - Sample rate: 16000 Hz
     - Channels: 1 (mono)
@@ -524,20 +521,6 @@ async def voice_input(
         emotion = None
         event = None
 
-        # Extract emotion markers
-        for emo in ["[开心]", "[伤心]", "[愤怒]", "[厌恶]", "[惊讶]"]:
-            if emo in result:
-                emotion = emo
-                text = text.replace(emo, "")
-                break
-
-        # Extract event markers
-        for evt in ["[鼓掌]", "[大笑]", "[哭]", "[打喷嚏]", "[咳嗽]", "[深呼吸]"]:
-            if evt in result:
-                event = evt
-                text = text.replace(evt, "")
-                break
-
         # Clean up text
         text = text.strip()
 
@@ -567,106 +550,6 @@ async def voice_input(
     except Exception as e:
         logger.error(f"Error processing voice input: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing voice input: {str(e)}")
-
-
-@router.post("/voice/chat")
-async def voice_chat(
-    audio: UploadFile = File(..., description="Audio file (WAV format, 16kHz, mono)"),
-    character_id: str = Form(default="sister_001", description="Character to chat with"),
-    conversation_history: Optional[str] = Form(default=None, description="JSON string of conversation history"),
-    stream: bool = Form(default=False, description="Whether to stream the response"),
-):
-    """
-    Process voice input and get character response.
-
-    This is a convenience endpoint that combines voice recognition and chat.
-    It accepts an audio file, performs speech recognition, and sends the
-    recognized text to the character for a response.
-
-    Request:
-    - audio: WAV audio file (16kHz, mono, 16-bit)
-    - character_id: Character to chat with (default: "sister_001")
-    - conversation_history: JSON string of previous messages (optional)
-    - stream: Whether to stream the response (default: false)
-
-    Returns:
-        Character's response to the voice input
-
-    For non-streaming:
-        Returns ChatResponse with the character's reply
-
-    For streaming:
-        Returns SSE stream with response chunks
-    """
-    import json
-
-    try:
-        # First, perform voice recognition
-        voice_response = await voice_input(
-            audio=audio,
-            character_id=character_id
-        )
-
-        if not voice_response.success:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Voice recognition failed: {voice_response.error}"
-            )
-
-        # Combine recognized text with emotion/event markers
-        message = voice_response.text or ""
-        if voice_response.emotion:
-            message = voice_response.emotion + message
-        if voice_response.event:
-            message = voice_response.event + message
-
-        # Parse conversation history
-        history = None
-        if conversation_history:
-            try:
-                history = json.loads(conversation_history)
-            except json.JSONDecodeError:
-                pass
-
-        # Create chat request
-        chat_request = ChatRequest(
-            message=message,
-            character_id=character_id,
-            conversation_history=history,
-            stream=stream
-        )
-
-        # If streaming, use the stream endpoint
-        if stream:
-            # Import here to avoid circular dependency
-            user_id = get_mock_user_id()
-            character_service = get_character_service()
-            llm = get_llm_service()
-
-            return await chat_stream(
-                request=chat_request,
-                user_id=user_id,
-                character_service=character_service,
-                llm=llm
-            )
-
-        # Non-streaming: use the regular chat endpoint
-        user_id = get_mock_user_id()
-        character_service = get_character_service()
-        llm = get_llm_service()
-
-        return await chat(
-            request=chat_request,
-            user_id=user_id,
-            character_service=character_service,
-            llm=llm
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in voice_chat: {e}")
-        raise HTTPException(status_code=500, detail=f"Error processing voice chat: {str(e)}")
 
 
 @router.post("/tts", response_model=TTSResponse)
