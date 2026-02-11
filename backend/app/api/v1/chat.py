@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from datetime import datetime
 import asyncio
 import logging
+import os
 
 from app.services.llm import LLM
 from app.services.character_service import CharacterService
@@ -13,6 +14,8 @@ from app.services.chat_service import ChatService
 from app.services.chat_history_service import ChatHistoryService
 from app.models.character import UserCharacterPreference
 from app.schemas.message import ChatRequest, ChatResponse, VoiceResponse, TTSRequest, TTSResponse
+
+from plugins.plugin import plugin_manager
 
 # Create router
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
@@ -29,6 +32,11 @@ def get_character_service() -> CharacterService:
     return CharacterService()
 
 
+# Load environment variables once at module load
+from dotenv import load_dotenv
+from pathlib import Path
+_env_loaded = load_dotenv(Path(__file__).parent.parent.parent.parent / ".env", override=True)
+
 def get_llm_service() -> LLM:
     """
     Dependency injection for LLM service.
@@ -36,8 +44,6 @@ def get_llm_service() -> LLM:
 
     Note: Requires OPENROUTER_API_KEY environment variable.
     """
-    import os
-
     # Get model from environment or use default
     model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
 
@@ -217,6 +223,9 @@ async def chat(
     """
     Send a message to a character and get a response.
 
+    Tool calling is handled automatically by chat_service.chat.
+    The response will not contain tool call markers <<<[TOOL_REQUEST]>>>.
+
     Request Body:
     - message: User's message to the character
     - character_id: Character to chat with (default: "sister_001")
@@ -261,14 +270,19 @@ async def chat(
     # Load conversation history from topic
     history_messages = history_service.get_history_for_chat(user_id, topic_id, character_uuid)
 
-    # Create chat service
+    # Create chat service with plugin manager
     chat_service = ChatService(
         llm=llm,
-        character_service=character_service
+        character_service=character_service,
+        plugin_manager=plugin_manager
     )
 
     # Generate response
     try:
+        # Ensure plugins are loaded
+        if not plugin_manager.plugins:
+            await plugin_manager.load_plugins()
+
         # Create modified request with history
         request_with_history = ChatRequest(
             message=request.message,
@@ -277,6 +291,7 @@ async def chat(
             stream=request.stream
         )
 
+        # Use chat method (tool calling is handled internally via chat_stream)
         response = await chat_service.chat(
             request=request_with_history,
             user_preferences=user_preferences,
@@ -338,7 +353,8 @@ async def chat_stream(
     """
     Send a message to a character and get a streaming response.
 
-    Request Body is the same as the regular chat endpoint, but stream should be set to true.
+    Tool calling is handled automatically by chat_service.chat_stream.
+    The response will not contain tool call markers <<<[TOOL_REQUEST]>>>.
 
     Returns:
         Server-Sent Events (SSE) stream with response chunks
@@ -376,20 +392,24 @@ async def chat_stream(
     # Load conversation history from topic
     history_messages = history_service.get_history_for_chat(user_id, topic_id, character_uuid)
 
-    # Create chat service
+    # Create chat service with plugin manager
     chat_service = ChatService(
         llm=llm,
-        character_service=character_service
+        character_service=character_service,
+        plugin_manager=plugin_manager
     )
 
     # Store full response for diary generation and saving
     full_response = []
 
     async def generate():
-        """Generate streaming response."""
-        nonlocal full_response
+        """Generate streaming response with tool calling support."""
         try:
-            # Create modified request with history
+            # Ensure plugins are loaded
+            if not plugin_manager.plugins:
+                await plugin_manager.load_plugins()
+
+            # Create request with history for building messages
             request_with_history = ChatRequest(
                 message=request.message,
                 character_id=request.character_id,
@@ -397,15 +417,11 @@ async def chat_stream(
                 stream=request.stream
             )
 
-            async for chunk in chat_service.chat_stream(
-                request=request_with_history,
-                user_preferences=user_preferences,
-                user_id=user_id
-            ):
-                # Send SSE format
-                yield f"data: {chunk}\n\n"
+            # Stream response (tool calling is handled internally by chat_service.chat_stream)
+            async for chunk in chat_service.chat_stream(request_with_history, user_preferences, user_id):
                 full_response.append(chunk)
-            # Send completion signal
+                yield f"data: {chunk}\n\n"
+
             yield "data: [DONE]\n\n"
 
             # Save user message to history
@@ -463,7 +479,7 @@ async def voice_input(
     Process voice input and return recognized text.
 
     This endpoint accepts an audio file (WAV format), performs speech recognition,
-    and optionally detects emotion and events from the audio.
+    and optionally detects emotion and events from audio.
 
     Request:
     - audio: WAV audio file (16kHz, mono, 16-bit)
@@ -505,7 +521,7 @@ async def voice_input(
             return VoiceResponse(
                 text="",
                 success=False,
-                error="ASR model not configured. Please set up the model first."
+                error="ASR model not configured. Please set up model first."
             )
 
         # Perform recognition
@@ -653,7 +669,7 @@ async def get_tts_audio(filename: str):
     Retrieve a generated TTS audio file.
 
     Path Parameters:
-    - filename: Name of the audio file (e.g., "tts_abc12345.wav")
+    - filename: Name of audio file (e.g., "tts_abc12345.wav")
 
     Returns:
         Audio file in WAV format

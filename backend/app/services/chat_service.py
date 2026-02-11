@@ -1,9 +1,20 @@
-"""Chat service that integrates character personalities with LLM services."""
+"""Chat service that integrates character personalities with LLM services.
 
-from typing import List, Dict, Optional, AsyncGenerator, Any
+Following VCPToolBox pattern:
+1. Stream LLM response
+2. Detect tool calls in response
+3. Execute tools
+4. Call LLM again with tool results
+5. Repeat until no more tool calls
+"""
+
+from typing import List, Dict, Optional, AsyncGenerator, Any, Tuple
 import random
 import re
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from app.services.llm import LLM
 from app.services.character_service import CharacterService
@@ -15,23 +26,82 @@ from app.schemas.message import (
     MessageContext
 )
 
+# Tool calling imports
+from plugins.tool_call_parser import ToolCallParser
+from plugins.tool_executor import ToolExecutor
+
 
 class ChatService:
     """
     Enhanced chat service that integrates character personalities with LLM services.
+
+    Tool calling flow (VCPToolBox pattern):
+    1. Generate LLM response (streaming or non-streaming)
+    2. Parse response for tool calls <<<[TOOL_REQUEST]>>>...<<<[END_TOOL_REQUEST]>>>
+    3. If tools found: execute them and call LLM again with results
+    4. Repeat until no more tool calls or max iterations reached
     """
 
-    def __init__(self, llm: LLM, character_service: CharacterService):
+    def __init__(
+        self,
+        llm: LLM,
+        character_service: CharacterService,
+        plugin_manager=None
+    ):
         """
         Initialize chat service.
 
         Args:
             llm: LLM instance to use for generating responses
             character_service: Character service for managing personalities
+            plugin_manager: Optional PluginManager for tool calling
         """
         self.llm = llm
         self.character_service = character_service
         self.diary_service = DiaryFileService()
+
+        # Initialize tool system if plugin_manager provided
+        self.plugin_manager = plugin_manager
+        if plugin_manager:
+            self.tool_parser = ToolCallParser()
+            self.tool_executor = ToolExecutor(plugin_manager)
+            self.max_tool_iterations = 5  # Prevent infinite loops
+        else:
+            self.tool_parser = None
+            self.tool_executor = None
+            self.max_tool_iterations = 0
+
+    def _build_message_context(
+        self,
+        request: ChatRequest
+    ) -> Optional[MessageContext]:
+        """
+        Build message context based on request metadata.
+
+        Args:
+            request: Chat request
+
+        Returns:
+            MessageContext or None
+        """
+        # Get character to check behavior parameters
+        character = self.character_service.get_character(request.character_id)
+
+        if not character:
+            return None
+
+        character_state = {
+            "proactivity_level": character.behavior.proactivity_level,
+            "argument_avoidance_threshold": character.behavior.argument_avoidance_threshold
+        }
+
+        # Determine if character should initiate a topic (random based on proactivity)
+        initiate_topic = random.random() < character.behavior.proactivity_level
+
+        return MessageContext(
+            character_state=character_state,
+            initiate_topic=initiate_topic
+        )
 
     async def chat(
         self,
@@ -42,50 +112,18 @@ class ChatService:
         """
         Generate a character-aware response.
 
-        Args:
-            request: Chat request with message and character info
-            user_preferences: Optional user preferences
-            user_id: User ID for diary retrieval
-
-        Returns:
-            ChatResponse: Character's response with metadata
+        This method collects the full response from chat_stream,
+        supporting tool calling through the streaming implementation.
         """
-        # Build message context
-        message_context = self._build_message_context(request)
-
-        # Generate system prompt with character and context
-        system_prompt = self.character_service.generate_system_prompt(
-            character_id=request.character_id,
-            user_preferences=user_preferences,
-            context=message_context.dict() if message_context else None
-        )
-
-        # Add diary context if available
-        if self.diary_service:
-            diary_context = await self._get_diary_context(
-                character_id=request.character_id,
-                user_id=user_id,
-                current_message=request.message
-            )
-            if diary_context:
-                system_prompt = self._add_diary_context_to_prompt(system_prompt, diary_context)
-
-        # Build messages list
-        messages = [{"role": "system", "content": system_prompt}]
-
-        # Add conversation history if provided
-        if request.conversation_history:
-            messages.extend(request.conversation_history)
-
-        # Add current message
-        messages.append({"role": "user", "content": request.message})
-
-        # Generate response (no function calling needed)
-        message_content = self.llm.generate_response(messages)
+        # Collect all chunks from stream
+        full_response = ""
+        async for chunk in self.chat_stream(request, user_preferences, user_id):
+            full_response += chunk
 
         # Build response object
+        message_context = self._build_message_context(request)
         return ChatResponse(
-            message=message_content,
+            message=full_response,
             character_id=request.character_id,
             context_used=message_context.dict() if message_context else None,
             timestamp=datetime.now()
@@ -98,25 +136,149 @@ class ChatService:
         user_id: str = "user_default"
     ) -> AsyncGenerator[str, None]:
         """
-        Generate a streaming character-aware response.
+        Generate a streaming character-aware response with tool calling support.
 
-        Args:
-            request: Chat request with message and character info
-            user_preferences: Optional user preferences
-            user_id: User ID for diary retrieval
+        VCPToolBox pattern:
+        1. Stream LLM response
+        2. Check for tool calls <<<[TOOL_REQUEST]>>>...<<<[END_TOOL_REQUEST]>>>
+        3. If tools found: execute and stream new response with results
+        4. Repeat until no more tool calls
 
         Yields:
-            str: Chunks of the character's response
+            Response chunks (including tool call markers - VCPToolBox pattern)
+        """
+        # Build initial messages
+        messages = await self._build_messages(request, user_preferences, user_id)
+
+        # Tool calling loop
+        iteration = 0
+        max_iterations = self.max_tool_iterations if self.plugin_manager else 1
+
+        while iteration < max_iterations:
+            iteration += 1
+
+            # Stream response and check for tool calls
+            response_chunks = []  # All chunks including tool markers (for history)
+            tool_calls = []
+            current_tool_content = ""
+            in_tool_call = False
+
+            for chunk in self.llm.generate_response_stream(messages):
+                response_chunks.append(chunk)
+
+                # Track tool call state
+                if "<<<[TOOL_REQUEST]>>>" in chunk:
+                    in_tool_call = True
+                    logger.info(f"[Tool Call] Detected start marker in chunk: {chunk[:50]}...")
+                    current_tool_content = chunk
+
+                if in_tool_call:
+                    current_tool_content += chunk
+                    if "<<<[END_TOOL_REQUEST]>>>" in current_tool_content:
+                        in_tool_call = False
+                        logger.info(f"[Tool Call] Detected end marker, parsing tool call...")
+                        logger.info(f"[Tool Call] Full tool content: {current_tool_content}")
+                        # Parse tool call after complete marker
+                        if self.tool_parser:
+                            parsed_calls = self.tool_parser.parse(current_tool_content)
+                            logger.info(f"[Tool Call] Parser returned {len(parsed_calls)} tool call(s)")
+                            tool_calls.extend(parsed_calls)
+                        current_tool_content = ""
+
+                # Yield ALL content (including tool call markers) - VCPToolBox pattern
+                yield chunk
+
+            # After stream completes, check for tool calls in full response
+            # (in case markers spanned multiple chunks)
+            full_response = "".join(response_chunks)
+            if "<<<[TOOL_REQUEST]>>>" in full_response and not tool_calls:
+                logger.warning(f"[Tool Call] Markers found in response but parsing failed!")
+                logger.warning(f"[Tool Call] Full response: {full_response}")
+                # Try parsing the full response
+                if self.tool_parser:
+                    tool_calls = self.tool_parser.parse(full_response)
+                    logger.info(f"[Tool Call] Re-parsing from full response returned {len(tool_calls)} tool call(s)")
+
+            # Check if we found any tool calls
+            if not tool_calls:
+                # No tool calls - we're done
+                logger.info(f"[Tool Call] No tool calls detected in iteration {iteration}")
+                break
+
+            # Log detected tool calls
+            logger.info(f"[Tool Call] Detected {len(tool_calls)} tool call(s) in iteration {iteration}")
+            for tc in tool_calls:
+                logger.info(f"[Tool Call]   - {tc.name}: {tc.args}")
+
+            # Execute tools
+            if self.tool_executor:
+                logger.info(f"[Tool Call] ========== STARTING TOOL EXECUTION ==========")
+                logger.info(f"[Tool Call] Executing {len(tool_calls)} tool call(s)...")
+                execution_results = await self.tool_executor.execute_all(tool_calls)
+
+                # Log execution results
+                for i, result in enumerate(execution_results):
+                    tool_name = result.get('tool_name', 'Unknown')
+                    status = "SUCCESS" if result.get('success') else "FAILED"
+                    if result.get('success'):
+                        content = str(result.get('content', ''))[:200]
+                        logger.info(f"[Tool Call] [{i+1}/{len(tool_calls)}] {tool_name} - {status}")
+                        logger.info(f"[Tool Call]   Result: {content}...")
+                        # Log full raw result for debugging
+                        raw_result = result.get('raw', {})
+                        logger.info(f"[Tool Call]   Raw result: {raw_result}")
+                    else:
+                        error = result.get('error', 'Unknown error')
+                        logger.error(f"[Tool Call] [{i+1}/{len(tool_calls)}] {tool_name} - {status}: {error}")
+
+                tool_summary = self.format_tool_results(execution_results)
+                logger.info(f"[Tool Call] ========== TOOL EXECUTION COMPLETE ==========")
+                logger.info(f"[Tool Call] Tool summary to be added to messages:\n{tool_summary}")
+
+                # Save FULL response (including tool markers) - VCPToolBox pattern
+                full_response = "".join(response_chunks)
+                logger.info(f"[Tool Call] Adding assistant message to history (with tool markers): {full_response[:100]}...")
+                messages.append({"role": "assistant", "content": full_response})
+
+                tool_result_msg = f"<!-- VCP_TOOL_PAYLOAD -->\n{tool_summary}"
+                logger.info(f"[Tool Call] Adding tool result message to history: {tool_result_msg[:100]}...")
+                messages.append({
+                    "role": "user",
+                    "content": tool_result_msg
+                })
+
+                logger.info(f"[Tool Call] ========== STARTING NEXT LLM CALL (iteration {iteration+1}) ==========")
+                # Continue loop to generate new response with tool results
+            else:
+                break
+
+    async def _build_messages(
+        self,
+        request: ChatRequest,
+        user_preferences: Optional[UserCharacterPreference],
+        user_id: str
+    ) -> List[Dict]:
+        """
+        Build messages list for LLM call.
+
+        Returns:
+            List of message dicts ready for LLM
         """
         # Build message context
         message_context = self._build_message_context(request)
 
-        # Generate system prompt with character and context
+        # Generate system prompt
         system_prompt = self.character_service.generate_system_prompt(
             character_id=request.character_id,
             user_preferences=user_preferences,
             context=message_context.dict() if message_context else None
         )
+
+        # Add tool descriptions if plugin manager available
+        if self.plugin_manager:
+            tool_description = self.plugin_manager.get_all_tools_description()
+            if tool_description:
+                system_prompt = f"{system_prompt}\n\n{tool_description}"
 
         # Add diary context if available
         if self.diary_service:
@@ -138,9 +300,7 @@ class ChatService:
         # Add current message
         messages.append({"role": "user", "content": request.message})
 
-        # Stream response
-        for chunk in self.llm.generate_response_stream(messages):
-            yield chunk
+        return messages
 
     async def _get_diary_context(
         self,
@@ -180,7 +340,6 @@ class ChatService:
 
             return self._format_diary_context(relevant_diaries[:3])
         except Exception as e:
-            # Log error but don't fail the chat
             print(f"Error getting diary context: {e}")
             return None
 
@@ -265,34 +424,46 @@ class ChatService:
 但不要刻意提及，要自然融入。
 """
 
-    def _build_message_context(
-        self,
-        request: ChatRequest
-    ) -> Optional[MessageContext]:
+    def _extract_response_without_tool_calls(self, response: str) -> str:
         """
-        Build message context based on request metadata.
+        Extract response content without tool call markers.
 
         Args:
-            request: Chat request
+            response: Response that may contain tool calls
 
         Returns:
-            MessageContext or None
+            Clean response without tool call markers
         """
-        # Get character to check behavior parameters
-        character = self.character_service.get_character(request.character_id)
+        pattern = r'<<<\[TOOL_REQUEST\]>>>.*?<<<\[END_TOOL_REQUEST\]>>>'
+        return re.sub(pattern, '', response, flags=re.DOTALL).strip()
 
-        if not character:
-            return None
+    def format_tool_results(self, execution_results: List[Dict]) -> str:
+        """
+        Format tool execution results for injection into conversation.
 
-        character_state = {
-            "proactivity_level": character.behavior.proactivity_level,
-            "argument_avoidance_threshold": character.behavior.argument_avoidance_threshold
-        }
+        Args:
+            execution_results: List of execution result dicts
 
-        # Determine if character should initiate a topic (random based on proactivity)
-        initiate_topic = random.random() < character.behavior.proactivity_level
+        Returns:
+            Formatted summary string
+        """
+        summary_parts = ["[[VCP调用结果信息汇总"]
 
-        return MessageContext(
-            character_state=character_state,
-            initiate_topic=initiate_topic
-        )
+        for result in execution_results:
+            tool_name = result.get('tool_name', 'Unknown')
+            if result.get('success'):
+                content = result.get('content', '')
+                # Truncate long content
+                if len(content) > 1000:
+                    content = content[:1000] + "..."
+                summary_parts.append(f"- 工具名称: {tool_name}")
+                summary_parts.append(f"- 执行状态: success")
+                summary_parts.append(f"- 返回内容: {content}")
+            else:
+                error_msg = result.get('error', '未知错误')
+                summary_parts.append(f"- 工具名称: {tool_name}")
+                summary_parts.append(f"- 执行状态: failed")
+                summary_parts.append(f"- 错误信息: {error_msg}")
+
+        summary_parts.append("VCP调用结果结束]]")
+        return "\n".join(summary_parts)

@@ -1,0 +1,16 @@
+{
+  "name": "RAGDiaryPlugin",
+  "displayName": "日记检索插件",
+  "version": "1.0.0",
+  "description": "根据时间表达式从日记中检索相关内容",
+  "pluginType": "hybrid",
+  "communication": {
+    "protocol": "direct"
+  },
+  "entryPoint": {
+    "script": "main.py"
+  },
+  "configSchema": {
+    "DebugMode": "boolean"
+  }
+}

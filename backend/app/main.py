@@ -1,12 +1,29 @@
 """FastAPI application for emotional companionship AI system."""
 
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from pathlib import Path
 
-# Load environment variables from .env file
-load_dotenv()
+# Configure logging with detailed format
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# Set more detailed logging for tool execution
+logging.getLogger("app.services.chat_service").setLevel(logging.INFO)
+logging.getLogger("plugins.tool_executor").setLevel(logging.INFO)
+
+# Load environment variables from .env file (try multiple locations)
+env_paths = [
+    Path(__file__).parent.parent.parent / ".env",  # Project root
+    Path(__file__).parent / ".env",  # Backend directory
+]
+load_dotenv(env_paths[0], override=True)  # Load from project root
 
 from app.api.v1 import character, chat, diary, chat_history
 from app.services.character_service import CharacterService
@@ -37,6 +54,14 @@ async def lifespan(app: FastAPI):
         print("Genie-TTS character 'feibi' loaded successfully")
     except Exception as e:
         print(f"Failed to load Genie-TTS character: {e}")
+
+    # Load plugins
+    from plugins.plugin import plugin_manager
+    try:
+        await plugin_manager.load_plugins()
+        print(f"Plugins loaded: {list(plugin_manager.plugins.keys())}")
+    except Exception as e:
+        print(f"Failed to load plugins: {e}")
 
     yield
     # 关闭时的清理工作（如果需要）
