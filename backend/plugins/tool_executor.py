@@ -22,7 +22,6 @@ class ToolExecutor:
             plugin_manager: PluginManager instance for executing tools
         """
         self.plugin_manager = plugin_manager
-        self.logger = logger
 
     async def execute(self, tool_call: ToolCall, client_ip: str = None) -> Dict[str, Any]:
         """
@@ -44,13 +43,9 @@ class ToolExecutor:
         tool_name = tool_call.name
         args = tool_call.args
 
-        self.logger.info(f"[ToolExecutor] Executing tool: {tool_name}")
-        self.logger.info(f"[ToolExecutor] Args: {args}")
-
         # Check if plugin exists
         if tool_name not in self.plugin_manager.plugins:
-            self.logger.error(f"[ToolExecutor] Plugin not found: {tool_name}")
-            self.logger.info(f"[ToolExecutor] Available plugins: {list(self.plugin_manager.plugins.keys())}")
+            logger.error(f"[ToolExecutor] Plugin '{tool_name}' not found. Available: {list(self.plugin_manager.plugins.keys())}")
             return self._create_error_result(
                 tool_name,
                 f"未找到名为 \"{tool_name}\" 的插件"
@@ -58,12 +53,10 @@ class ToolExecutor:
 
         # Execute plugin
         try:
-            self.logger.info(f"[ToolExecutor] Calling plugin_manager.process_tool_call({tool_name}, ...)")
             result = await self.plugin_manager.process_tool_call(tool_name, args)
-            self.logger.info(f"[ToolExecutor] Plugin returned: {result}")
             return self._process_result(tool_name, result)
         except Exception as e:
-            self.logger.error(f"[ToolExecutor] Tool execution error [{tool_name}]: {e}", exc_info=True)
+            logger.error(f"[ToolExecutor] '{tool_name}' error: {e}")
             return self._create_error_result(
                 tool_name,
                 f"执行错误: {str(e)}"

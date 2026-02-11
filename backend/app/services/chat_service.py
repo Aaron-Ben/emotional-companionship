@@ -169,19 +169,15 @@ class ChatService:
                 # Track tool call state
                 if "<<<[TOOL_REQUEST]>>>" in chunk:
                     in_tool_call = True
-                    logger.info(f"[Tool Call] Detected start marker in chunk: {chunk[:50]}...")
                     current_tool_content = chunk
 
                 if in_tool_call:
                     current_tool_content += chunk
                     if "<<<[END_TOOL_REQUEST]>>>" in current_tool_content:
                         in_tool_call = False
-                        logger.info(f"[Tool Call] Detected end marker, parsing tool call...")
-                        logger.info(f"[Tool Call] Full tool content: {current_tool_content}")
                         # Parse tool call after complete marker
                         if self.tool_parser:
                             parsed_calls = self.tool_parser.parse(current_tool_content)
-                            logger.info(f"[Tool Call] Parser returned {len(parsed_calls)} tool call(s)")
                             tool_calls.extend(parsed_calls)
                         current_tool_content = ""
 
@@ -192,62 +188,41 @@ class ChatService:
             # (in case markers spanned multiple chunks)
             full_response = "".join(response_chunks)
             if "<<<[TOOL_REQUEST]>>>" in full_response and not tool_calls:
-                logger.warning(f"[Tool Call] Markers found in response but parsing failed!")
-                logger.warning(f"[Tool Call] Full response: {full_response}")
                 # Try parsing the full response
                 if self.tool_parser:
                     tool_calls = self.tool_parser.parse(full_response)
-                    logger.info(f"[Tool Call] Re-parsing from full response returned {len(tool_calls)} tool call(s)")
 
             # Check if we found any tool calls
             if not tool_calls:
                 # No tool calls - we're done
-                logger.info(f"[Tool Call] No tool calls detected in iteration {iteration}")
                 break
 
             # Log detected tool calls
-            logger.info(f"[Tool Call] Detected {len(tool_calls)} tool call(s) in iteration {iteration}")
-            for tc in tool_calls:
-                logger.info(f"[Tool Call]   - {tc.name}: {tc.args}")
+            logger.info(f"[Tool Call] Executing {len(tool_calls)} tool(s): {[tc.name for tc in tool_calls]}")
 
             # Execute tools
             if self.tool_executor:
-                logger.info(f"[Tool Call] ========== STARTING TOOL EXECUTION ==========")
-                logger.info(f"[Tool Call] Executing {len(tool_calls)} tool call(s)...")
                 execution_results = await self.tool_executor.execute_all(tool_calls)
 
                 # Log execution results
                 for i, result in enumerate(execution_results):
                     tool_name = result.get('tool_name', 'Unknown')
-                    status = "SUCCESS" if result.get('success') else "FAILED"
                     if result.get('success'):
-                        content = str(result.get('content', ''))[:200]
-                        logger.info(f"[Tool Call] [{i+1}/{len(tool_calls)}] {tool_name} - {status}")
-                        logger.info(f"[Tool Call]   Result: {content}...")
-                        # Log full raw result for debugging
-                        raw_result = result.get('raw', {})
-                        logger.info(f"[Tool Call]   Raw result: {raw_result}")
+                        content = str(result.get('content', ''))[:100]
+                        logger.info(f"[Tool Call] [{i+1}/{len(tool_calls)}] {tool_name} - SUCCESS: {content}...")
                     else:
                         error = result.get('error', 'Unknown error')
-                        logger.error(f"[Tool Call] [{i+1}/{len(tool_calls)}] {tool_name} - {status}: {error}")
+                        logger.error(f"[Tool Call] [{i+1}/{len(tool_calls)}] {tool_name} - FAILED: {error}")
 
                 tool_summary = self.format_tool_results(execution_results)
-                logger.info(f"[Tool Call] ========== TOOL EXECUTION COMPLETE ==========")
-                logger.info(f"[Tool Call] Tool summary to be added to messages:\n{tool_summary}")
 
                 # Save FULL response (including tool markers) - VCPToolBox pattern
                 full_response = "".join(response_chunks)
-                logger.info(f"[Tool Call] Adding assistant message to history (with tool markers): {full_response[:100]}...")
                 messages.append({"role": "assistant", "content": full_response})
-
-                tool_result_msg = f"<!-- VCP_TOOL_PAYLOAD -->\n{tool_summary}"
-                logger.info(f"[Tool Call] Adding tool result message to history: {tool_result_msg[:100]}...")
                 messages.append({
                     "role": "user",
-                    "content": tool_result_msg
+                    "content": f"<!-- VCP_TOOL_PAYLOAD -->\n{tool_summary}"
                 })
-
-                logger.info(f"[Tool Call] ========== STARTING NEXT LLM CALL (iteration {iteration+1}) ==========")
                 # Continue loop to generate new response with tool results
             else:
                 break

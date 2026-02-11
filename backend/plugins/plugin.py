@@ -113,37 +113,29 @@ class PluginManager:
         Returns:
             插件执行结果
         """
-        logger.info(f"[PluginManager] Processing tool call: {tool_name}")
-        logger.info(f"[PluginManager] Tool args: {tool_args}")
-
         plugin = self.plugins.get(tool_name)
 
         if not plugin:
-            logger.error(f"[PluginManager] Plugin \"{tool_name}\" not found. Available: {list(self.plugins.keys())}")
+            logger.error(f"[PluginManager] Plugin not found: {tool_name}")
             print(f"[PluginManager] Plugin \"{tool_name}\" not found.")
             return {"status": "error", "error": f"Plugin '{tool_name}' not found"}
 
         protocol = plugin.get("communication", {}).get("protocol", "direct")
-        logger.info(f"[PluginManager] Plugin protocol: {protocol}")
 
         if protocol == "stdio":
-            logger.info(f"[PluginManager] Executing stdio plugin: {tool_name}")
             return await self._execute_stdio_plugin(tool_name, tool_args)
         elif protocol == "direct":
             module = self.get_service_module(tool_name)
             if module and hasattr(module, "process_tool_call"):
-                logger.info(f"[PluginManager] Executing direct plugin: {tool_name}")
                 if asyncio.iscoroutinefunction(module.process_tool_call):
                     result = await module.process_tool_call(tool_args)
                 else:
                     result = module.process_tool_call(tool_args)
-                logger.info(f"[PluginManager] Direct plugin result: {result}")
                 return result
             else:
                 logger.error(f"[PluginManager] Plugin '{tool_name}' does not support tool calls")
                 return {"status": "error", "error": f"Plugin '{tool_name}' does not support tool calls"}
         else:
-            logger.error(f"[PluginManager] Unknown protocol: {protocol}")
             return {"status": "error", "error": f"Unknown protocol: {protocol}"}
 
     # ========== stdio 协议插件执行 ==========
@@ -154,8 +146,6 @@ class PluginManager:
         通过子进程执行外部可执行文件，通过 stdin 传递 JSON 输入，
         通过 stdout 读取 JSON 输出。
         """
-        logger.info(f"[PluginManager] Executing stdio plugin: {plugin_name}")
-
         plugin = self.plugins.get(plugin_name)
         if not plugin:
             return {"status": "error", "error": f"Plugin '{plugin_name}' not found"}
@@ -166,14 +156,11 @@ class PluginManager:
 
         base_path = plugin.get("basePath", "")
 
-        logger.info(f"[PluginManager] Command: {command}, cwd: {base_path}, timeout: {timeout}s")
-
         if not command:
             return {"status": "error", "error": f"Plugin '{plugin_name}' has no command configured"}
 
         try:
             # 创建子进程
-            logger.info(f"[PluginManager] Creating subprocess with command: {command.split()}")
             process = await asyncio.create_subprocess_exec(
                 *command.split(),
                 stdin=asyncio.subprocess.PIPE,
@@ -184,7 +171,6 @@ class PluginManager:
 
             # 准备输入 JSON
             input_json = json.dumps(input_data, ensure_ascii=False)
-            logger.info(f"[PluginManager] Sending input to plugin: {input_json[:200]}...")
 
             # 执行并等待结果
             try:
@@ -192,9 +178,8 @@ class PluginManager:
                     process.communicate(input_json.encode('utf-8')),
                     timeout=timeout
                 )
-                logger.info(f"[PluginManager] Plugin process completed with return code: {process.returncode}")
             except asyncio.TimeoutError:
-                logger.error(f"[PluginManager] Plugin '{plugin_name}' execution timeout")
+                logger.error(f"[PluginManager] {plugin_name} timeout")
                 process.kill()
                 await process.wait()
                 return {"status": "error", "error": f"Plugin '{plugin_name}' execution timeout"}
@@ -202,18 +187,16 @@ class PluginManager:
             # 检查返回码
             if process.returncode != 0:
                 error_msg = stderr.decode('utf-8', errors='replace') if stderr else "Unknown error"
-                logger.error(f"[PluginManager] Plugin failed with return code {process.returncode}: {error_msg}")
+                logger.error(f"[PluginManager] {plugin_name} failed (code {process.returncode}): {error_msg}")
                 return {"status": "error", "error": f"Plugin '{plugin_name}' failed: {error_msg}"}
 
             # 解析输出
             try:
                 stdout_str = stdout.decode('utf-8')
-                logger.info(f"[PluginManager] Plugin stdout (first 200 chars): {stdout_str[:200]}...")
                 result = json.loads(stdout_str)
-                logger.info(f"[PluginManager] Plugin parsed result: {result}")
                 return result
             except json.JSONDecodeError as e:
-                logger.error(f"[PluginManager] Invalid JSON output from plugin: {e}, output: {stdout_str[:200]}...")
+                logger.error(f"[PluginManager] Invalid JSON from {plugin_name}: {e}")
                 return {"status": "error", "error": f"Invalid JSON output from plugin: {e}"}
 
         except FileNotFoundError:

@@ -7,17 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pathlib import Path
 
-# Configure logging with detailed format
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-# Set more detailed logging for tool execution
-logging.getLogger("app.services.chat_service").setLevel(logging.INFO)
-logging.getLogger("plugins.tool_executor").setLevel(logging.INFO)
-
 # Load environment variables from .env file (try multiple locations)
 env_paths = [
     Path(__file__).parent.parent.parent / ".env",  # Project root
@@ -28,6 +17,22 @@ load_dotenv(env_paths[0], override=True)  # Load from project root
 from app.api.v1 import character, chat, diary, chat_history
 from app.services.character_service import CharacterService
 from app.models.database import init_db
+from app.utils.file_logger import DailyFileHandler, LOGS_DIR
+
+# Configure logging with detailed format
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# Create shared file handler for all tool-related logs
+file_handler = DailyFileHandler()
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+
+# Add file handler to loggers
+for logger_name in ["app.services.chat_service", "plugins.tool_executor", "plugins.plugin", "plugins.tool_call_parser"]:
+    logging.getLogger(logger_name).addHandler(file_handler)
 
 
 @asynccontextmanager
@@ -63,10 +68,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Failed to load plugins: {e}")
 
+    # Ensure logs directory exists
+    from app.utils.file_logger import LOGS_DIR
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"File logging enabled: {LOGS_DIR}/today.txt")
+
     yield
     # 关闭时的清理工作（如果需要）
     from app.characters.tts import cleanup
     cleanup()
+
+    # Close file loggers
+    for handler in list(logging.getLogger().handlers):
+        if isinstance(handler, DailyFileHandler):
+            handler.close()
+
     print("Application shutting down")
 
 

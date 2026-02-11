@@ -695,3 +695,87 @@ async def get_tts_audio(filename: str):
         media_type="audio/wav",
         filename=filename
     )
+
+
+@router.get("/logs/today")
+async def get_today_logs():
+    """
+    Get today's chat and tool call logs.
+
+    Returns the content of today.txt which contains all logs
+    from the current day including tool calls and execution results.
+    """
+    try:
+        from app.utils.file_logger import get_log_content
+        from datetime import datetime
+
+        log_content = get_log_content()  # Gets today's logs by default
+
+        return {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "content": log_content,
+            "lines": len(log_content.split('\n')) if log_content else 0
+        }
+    except Exception as e:
+        logger.error(f"Error reading logs: {e}")
+        raise HTTPException(status_code=500, detail=f"Error reading logs: {str(e)}")
+
+
+@router.get("/logs/list")
+async def list_logs():
+    """
+    List all available log files.
+
+    Returns a list of all archived log files with their dates.
+    """
+    try:
+        from app.utils.file_logger import list_log_files
+
+        log_files = list_log_files()
+
+        return {
+            "logs": [
+                {"filename": filename, "date": date_str}
+                for filename, date_str in log_files
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error listing logs: {e}")
+        raise HTTPException(status_code=500, detail=f"Error listing logs: {str(e)}")
+
+
+@router.get("/logs/{date}")
+async def get_logs_by_date(date: str):
+    """
+    Get logs for a specific date.
+
+    Path Parameters:
+    - date: Date in YYYY-MM-DD format
+
+    Returns the log content for the specified date.
+    """
+    try:
+        from app.utils.file_logger import get_log_content
+        from datetime import datetime
+
+        # Parse date
+        try:
+            target_date = datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+        log_content = get_log_content(target_date)
+
+        if not log_content:
+            raise HTTPException(status_code=404, detail=f"No logs found for date: {date}")
+
+        return {
+            "date": date,
+            "content": log_content,
+            "lines": len(log_content.split('\n'))
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reading logs for {date}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error reading logs: {str(e)}")

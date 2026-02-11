@@ -2,11 +2,14 @@
 
 import json
 import os
+import logging
 from typing import Dict, List, Optional, Union
 
 from openai import OpenAI
 
 from app.utils.json import extract_json
+
+logger = logging.getLogger(__name__)
 
 
 class LLMConfig:
@@ -20,6 +23,8 @@ class LLMConfig:
         max_tokens: int = 2000,
         top_p: float = 0.1,
         base_url: Optional[str] = None,
+        timeout: float = 120.0,  # HTTP timeout in seconds
+        max_retries: int = 3,  # Maximum retry attempts
     ):
         """
         Initialize LLM configuration.
@@ -31,6 +36,8 @@ class LLMConfig:
             max_tokens: Maximum tokens to generate
             top_p: Nucleus sampling parameter
             base_url: API base URL (defaults to OpenRouter)
+            timeout: HTTP request timeout in seconds (default: 120)
+            max_retries: Maximum retry attempts (default: 3)
         """
         self.model = model
         self.temperature = temperature
@@ -38,6 +45,8 @@ class LLMConfig:
         self.max_tokens = max_tokens
         self.top_p = top_p
         self.base_url = base_url
+        self.timeout = timeout
+        self.max_retries = max_retries
 
 
 class LLM:
@@ -66,7 +75,15 @@ class LLM:
         if not api_key:
             raise ValueError("OPENROUTER_API_KEY environment variable or config.api_key is required")
 
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        # Create OpenAI client with timeout settings
+        import httpx
+        timeout = httpx.Timeout(self.config.timeout, connect=10.0)
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=timeout,
+            max_retries=self.config.max_retries
+        )
 
     def _parse_response(self, response, tools):
         """
@@ -135,8 +152,14 @@ class LLM:
             params["tools"] = tools
             params["tool_choice"] = tool_choice
 
-        response = self.client.chat.completions.create(**params)
-        return self._parse_response(response, tools)
+        logger.info(f"[LLM] Starting non-stream request to {self.config.model}")
+        try:
+            response = self.client.chat.completions.create(**params)
+            logger.info(f"[LLM] Non-stream request completed successfully")
+            return self._parse_response(response, tools)
+        except Exception as e:
+            logger.error(f"[LLM] Non-stream request error: {type(e).__name__}: {e}", exc_info=True)
+            raise
 
     def generate_response_stream(
         self,
@@ -176,7 +199,18 @@ class LLM:
             params["tools"] = tools
             params["tool_choice"] = tool_choice
 
-        stream = self.client.chat.completions.create(**params)
+        try:
+            stream = self.client.chat.completions.create(**params)
+
+            for chunk in stream:
+                if chunk.choices and len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta
+                    if hasattr(delta, "content") and delta.content:
+                        yield delta.content
+
+        except Exception as e:
+            logger.error(f"[LLM] API error: {type(e).__name__}: {e}")
+            raise
 
         for chunk in stream:
             if chunk.choices and len(chunk.choices) > 0:
