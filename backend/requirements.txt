@@ -25,6 +25,10 @@ pyyaml>=6.0
 tiktoken>=0.5.0  # Token 计算 (Embedding, 文本分块)
 pytz>=2023.3  # 时区处理 (时间表达式解析)
 
+# 数学和向量计算 (RAG 插件)
+numpy>=1.24.0  # 向量运算
+scipy>=1.10.0  # 高级数学运算 (SVD, K-Means, PCA)
+
 # TTS (文本转语音) - Genie-TTS (GPT-SoVITS)
 genie-tts>=0.1.0
 
