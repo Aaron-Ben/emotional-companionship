@@ -118,7 +118,11 @@ class TimeExpressionParser:
 
                 result = None
                 if config.days is not None:
-                    target_date = now - timedelta(days=config.days)
+                    # 支持未来日期：负数表示未来，正数表示过去
+                    if config.days < 0:
+                        target_date = now + timedelta(days=-config.days)
+                    else:
+                        target_date = now - timedelta(days=config.days)
                     result = self._get_day_boundaries(target_date)
                 elif config.type:
                     result = self._get_special_range(now, config.type)

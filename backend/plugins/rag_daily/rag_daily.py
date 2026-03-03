@@ -6,7 +6,6 @@ RAGDailyPlugin - 日记检索插件
 
 Features:
 - 时间表达式解析
-- 语义组激活
 - 上下文向量管理
 - 嵌入投影分析 (EPA)
 - 残差金字塔分析
@@ -20,12 +19,10 @@ from datetime import datetime
 import logging
 
 from .time_parser import TimeExpressionParser, TimeRange
-from .group_manager import SemanticGroupManager
 from .context_vector_manager import ContextVectorManager
 from .epa_module import EPAModule
 from .residual_pyramid import ResidualPyramid
 from .result_deduplicator import ResultDeduplicator
-from .vector_cache import CachedEmbeddingService
 
 from app.services.embedding import EmbeddingService
 
@@ -37,13 +34,11 @@ class RAGDailyPlugin:
 
     def __init__(self):
         self.time_parser = TimeExpressionParser()
-        self.group_manager: Optional[SemanticGroupManager] = None
         self.context_manager: Optional[ContextVectorManager] = None
         self.epa_module: Optional[EPAModule] = None
         self.residual_pyramid: Optional[ResidualPyramid] = None
         self.deduplicator: Optional[ResultDeduplicator] = None
         self.embedding_service: Optional[EmbeddingService] = None
-        self.cached_embedding_service: Optional[CachedEmbeddingService] = None
 
         # Database access
         self.db_session_factory = None
@@ -73,10 +68,8 @@ class RAGDailyPlugin:
 
         # Initialize embedding service
         self.embedding_service = EmbeddingService()
-        self.cached_embedding_service = CachedEmbeddingService(self.embedding_service)
 
         # Initialize components
-        self.group_manager = SemanticGroupManager()
         self.context_manager = ContextVectorManager(
             decay_rate=config.get("context_decay_rate", 0.75),
             max_context_window=config.get("max_context_window", 10),

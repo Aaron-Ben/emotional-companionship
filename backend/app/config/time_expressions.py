@@ -54,6 +54,10 @@ TIME_EXPRESSIONS: Dict[str, Dict[str, Dict]] = {
             '昨天': TimeExpression(days=1),
             '前天': TimeExpression(days=2),
             '大前天': TimeExpression(days=3),
+            # 未来时间词（使用负数表示）
+            '明天': TimeExpression(days=-1),
+            '后天': TimeExpression(days=-2),
+            '大后天': TimeExpression(days=-3),
 
             # 模糊时间词
             '之前': TimeExpression(days=3),  # "之前"通常指代不久前，暂定3天
