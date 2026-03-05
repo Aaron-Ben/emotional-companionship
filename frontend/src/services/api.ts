@@ -1,15 +1,14 @@
-/** API base configuration */
+/** API base configuration - Simplified for file system based storage */
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 export const API_ENDPOINTS = {
-  // Character endpoints
-  listCharacters: () => `${API_BASE_URL}/api/v1/character/`,
-  getCharacter: (id: string) => `${API_BASE_URL}/api/v1/character/${id}`,
-  updatePreferences: () => `${API_BASE_URL}/api/v1/character/preferences`,
-  getPreferences: (id: string) => `${API_BASE_URL}/api/v1/character/preferences/${id}`,
-  deletePreferences: (id: string) => `${API_BASE_URL}/api/v1/character/preferences/${id}`,
-  getStarter: () => `${API_BASE_URL}/api/v1/character/starter`,
+  // User character management endpoints
+  createCharacter: () => `${API_BASE_URL}/api/v1/character/create`,
+  listUserCharacters: () => `${API_BASE_URL}/api/v1/character/user/list`,
+  getUserCharacter: (id: string) => `${API_BASE_URL}/api/v1/character/user/${id}`,
+  deleteUserCharacter: (id: string) => `${API_BASE_URL}/api/v1/character/user/${id}`,
+  updateUserCharacterPrompt: (id: string) => `${API_BASE_URL}/api/v1/character/user/${id}`,
 
   // Chat endpoints
   chat: () => `${API_BASE_URL}/api/v1/chat/`,
@@ -29,8 +28,6 @@ export const API_ENDPOINTS = {
   topicDelete: (id: number) => `${API_BASE_URL}/api/v1/chat/topics/${id}`,
   topicHistory: (id: number, characterUuid?: string) =>
     `${API_BASE_URL}/api/v1/chat/topics/${id}/history${characterUuid ? `?character_uuid=${characterUuid}` : ''}`,
-  topicMapping: (characterId: string) =>
-    `${API_BASE_URL}/api/v1/chat/topics/mappings/resolve?character_id=${characterId}`,
 } as const;
 
 export async function apiRequest<T>(

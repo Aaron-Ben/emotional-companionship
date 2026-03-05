@@ -1,55 +1,28 @@
-"""Character API request/response schemas."""
+"""Character API request/response schemas - Simplified for file system based storage."""
 
-from typing import List, Optional
+from typing import List
 from pydantic import BaseModel, Field
-from datetime import datetime
 
-from app.models.character import CharacterTemplate, UserCharacterPreference, CharacterType
-
-
-class CharacterResponse(BaseModel):
-    """Response with character template."""
-    character: CharacterTemplate
+from app.models.character import UserCharacter
 
 
-class CharacterListResponse(BaseModel):
-    """Response with list of characters."""
-    characters: List[CharacterTemplate]
+class CreateCharacterRequest(BaseModel):
+    """Request to create a new character."""
+    name: str = Field(..., min_length=1, max_length=100, description="Character name")
+    prompt: str = Field(..., min_length=1, description="System prompt for the character")
+
+
+class UpdateCharacterPromptRequest(BaseModel):
+    """Request to update a character's prompt."""
+    prompt: str = Field(..., min_length=1, description="New system prompt")
+
+
+class UserCharacterListResponse(BaseModel):
+    """Response with list of user characters."""
+    characters: List[UserCharacter]
     count: int
 
 
-class UserPreferenceCreate(BaseModel):
-    """Request to create user preferences."""
-    character_id: str = Field(..., description="Character ID to customize")
-    nickname: Optional[str] = Field(None, description="Preferred nickname for character to address user")
-    style_level: float = Field(1.0, ge=0.7, le=1.3, description="Maturity level (0.7=more playful, 1.3=more mature)")
-    custom_instructions: Optional[str] = Field(None, description="Additional instructions for the character")
-    relationship_notes: Optional[str] = Field(None, description="Notes about the relationship context")
-
-
-
-class UserPreferenceUpdate(BaseModel):
-    """Request to update user preferences."""
-    character_id: str = Field(..., description="Character ID to update")
-    nickname: Optional[str] = Field(None, description="New nickname")
-    style_level: Optional[float] = Field(None, ge=0.7, le=1.3, description="New maturity level")
-    custom_instructions: Optional[str] = Field(None, description="New instructions")
-    relationship_notes: Optional[str] = Field(None, description="New notes")
-
-
-
-class UserPreferenceResponse(BaseModel):
-    """Response with user preferences."""
-    preference: UserCharacterPreference
-
-
-class ConversationStarterRequest(BaseModel):
-    """Request for a conversation starter."""
-    character_id: str = Field(default="sister_001", description="Character to get starter for")
-
-
-
-class ConversationStarterResponse(BaseModel):
-    """Response with conversation starter."""
-    starter: str
-    character_id: str
+class UserCharacterResponse(BaseModel):
+    """Response with a single user character."""
+    character: UserCharacter

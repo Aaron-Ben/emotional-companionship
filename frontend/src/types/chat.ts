@@ -127,8 +127,3 @@ export interface ChatHistoryResponse {
   messages: ChatMessageResponse[];
   total: number;
 }
-
-export interface CharacterMappingResponse {
-  character_uuid: string;
-  character_id: string;
-}

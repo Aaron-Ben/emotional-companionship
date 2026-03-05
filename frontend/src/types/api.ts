@@ -1,6 +1,6 @@
-/** API response type definitions */
+/** API response type definitions - Simplified for file system based storage */
 
-import { CharacterTemplate, UserPreference } from './character';
+import { UserCharacter } from './character';
 
 export interface ApiResponse<T> {
   data?: T;
@@ -8,41 +8,21 @@ export interface ApiResponse<T> {
   message?: string;
 }
 
-export interface CharacterListResponse {
-  characters: CharacterTemplate[];
+// User character management types
+export interface CreateCharacterRequest {
+  name: string;
+  prompt: string;
+}
+
+export interface UpdateCharacterPromptRequest {
+  prompt: string;
+}
+
+export interface UserCharacterListResponse {
+  characters: UserCharacter[];
   count: number;
 }
 
-export interface CharacterResponse {
-  character: CharacterTemplate;
-}
-
-export interface UserPreferenceResponse {
-  preference: UserPreference;
-}
-
-export interface ConversationStarterRequest {
-  character_id?: string;
-}
-
-export interface StarterResponse {
-  starter: string;
-  character_id: string;
-  timestamp?: string;
-}
-
-export interface UserPreferenceCreate {
-  character_id: string;
-  nickname?: string;
-  style_level?: number;
-  custom_instructions?: string;
-  relationship_notes?: string;
-}
-
-export interface UserPreferenceUpdate {
-  character_id: string;
-  nickname?: string;
-  style_level?: number;
-  custom_instructions?: string;
-  relationship_notes?: string;
+export interface UserCharacterResponse {
+  character: UserCharacter;
 }

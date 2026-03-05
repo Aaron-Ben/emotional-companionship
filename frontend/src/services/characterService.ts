@@ -1,43 +1,54 @@
-/** Character API service */
+/** Character API service - Simplified for file system based storage */
 
 import { API_ENDPOINTS, apiRequest } from './api';
 import type {
-  CharacterListResponse,
-  CharacterResponse,
-  UserPreferenceResponse,
-  StarterResponse,
-  UserPreferenceCreate,
+  CreateCharacterRequest,
+  UpdateCharacterPromptRequest,
+  UserCharacterListResponse,
+  UserCharacterResponse,
 } from '../types/api';
+import type { UserCharacter } from '../types/character';
 
-export async function listCharacters() {
-  return apiRequest<CharacterListResponse>(API_ENDPOINTS.listCharacters());
-}
+// User character management functions
 
-export async function getCharacter(id: string) {
-  return apiRequest<CharacterResponse>(API_ENDPOINTS.getCharacter(id));
-}
-
-export async function updateUserPreferences(data: UserPreferenceCreate) {
-  return apiRequest<UserPreferenceResponse>(API_ENDPOINTS.updatePreferences(), {
-    method: 'PUT',
+export async function createCharacter(data: CreateCharacterRequest): Promise<UserCharacterResponse> {
+  return apiRequest<UserCharacterResponse>(API_ENDPOINTS.createCharacter(), {
+    method: 'POST',
     body: JSON.stringify(data),
   });
 }
 
-export async function getUserPreferences(characterId: string) {
-  return apiRequest<UserPreferenceResponse>(API_ENDPOINTS.getPreferences(characterId));
+export async function listUserCharacters(): Promise<UserCharacterListResponse> {
+  return apiRequest<UserCharacterListResponse>(API_ENDPOINTS.listUserCharacters());
 }
 
-export async function deleteUserPreferences(characterId: string) {
+export async function getUserCharacter(id: string): Promise<UserCharacterResponse> {
+  return apiRequest<UserCharacterResponse>(API_ENDPOINTS.getUserCharacter(id));
+}
+
+export async function deleteUserCharacter(id: string): Promise<{ message: string; character_id: string }> {
   return apiRequest<{ message: string; character_id: string }>(
-    API_ENDPOINTS.deletePreferences(characterId),
+    API_ENDPOINTS.deleteUserCharacter(id),
     { method: 'DELETE' }
   );
 }
 
-export async function getConversationStarter(characterId: string) {
-  return apiRequest<StarterResponse>(API_ENDPOINTS.getStarter(), {
-    method: 'POST',
-    body: JSON.stringify(characterId ? { character_id: characterId } : {}),
+export async function updateCharacterPrompt(
+  id: string,
+  data: UpdateCharacterPromptRequest
+): Promise<UserCharacterResponse> {
+  return apiRequest<UserCharacterResponse>(API_ENDPOINTS.updateUserCharacterPrompt(id), {
+    method: 'PATCH',
+    body: JSON.stringify(data),
   });
+}
+
+export async function listAllCharacters(): Promise<UserCharacter[]> {
+  try {
+    const response = await listUserCharacters();
+    return response.characters;
+  } catch (error) {
+    console.error('Failed to load characters:', error);
+    return [];
+  }
 }

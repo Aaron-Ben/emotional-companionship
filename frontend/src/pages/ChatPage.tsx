@@ -1,24 +1,41 @@
 /** Main chat page component with topic sidebar */
 
 import React, { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { TraditionalChatPanel } from '../components/conversation';
 import { FloatingActionButton } from '../components/ui';
 import { DiaryListModal, DiaryDetailModal, DiaryEditModal } from '../components/diary';
 import { TopicSidebar } from '../components/topics';
+import { CharacterSelector } from '../components/character/CharacterSelector';
 import { useChat } from '../hooks/useChat';
 import { useTopics } from '../hooks/useTopics';
 import backgroundImage from '/background/image.png';
 import type { DiaryEntry } from '../services/diaryService';
 import type { DisplayMessage } from '../types/chat';
 
-const CHARACTER_ID = 'sister_001';
+const DEFAULT_CHARACTER_ID = 'sister_001';
 
 export const ChatPage: React.FC = () => {
+  const navigate = useNavigate();
   const [showDiaries, setShowDiaries] = useState(false);
   const [showDiaryDetail, setShowDiaryDetail] = useState(false);
   const [showDiaryEdit, setShowDiaryEdit] = useState(false);
   const [selectedDiary, setSelectedDiary] = useState<DiaryEntry | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Character selection state - character_id IS the UUID
+  const [selectedCharacterId, setSelectedCharacterId] = useState(() => {
+    const stored = localStorage.getItem('selectedCharacterId');
+    if (stored && stored.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      return stored;
+    }
+    return DEFAULT_CHARACTER_ID;
+  });
+
+  const handleCharacterChange = useCallback((characterId: string) => {
+    setSelectedCharacterId(characterId);
+    localStorage.setItem('selectedCharacterId', characterId);
+  }, []);
 
   const handleVoiceInputStart = useCallback(() => {
     // Voice input start handling
@@ -32,14 +49,13 @@ export const ChatPage: React.FC = () => {
   const {
     topics,
     currentTopicId,
-    characterUuid,
     loading: topicsLoading,
     createNewTopic,
     selectTopic,
     deleteTopicById: deleteTopic,
     refreshTopics,
   } = useTopics({
-    characterId: CHARACTER_ID,
+    characterId: selectedCharacterId,
     onTopicChange: handleTopicChange,
   });
 
@@ -55,9 +71,8 @@ export const ChatPage: React.FC = () => {
     playTTS,
     setMessages: setChatMessages,
   } = useChat({
-    characterId: CHARACTER_ID,
+    characterId: selectedCharacterId,
     topicId: currentTopicId ?? undefined,
-    characterUuid: characterUuid ?? undefined,
   });
 
   // Handle topic selection
@@ -143,6 +158,23 @@ export const ChatPage: React.FC = () => {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col relative">
+        {/* Top bar with character selector and management button */}
+        <div className="absolute top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-white/80 to-transparent">
+          <div className="flex items-center gap-3">
+            <CharacterSelector
+              selectedCharacterId={selectedCharacterId}
+              onCharacterChange={handleCharacterChange}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/characters')}
+            className="px-4 py-2 rounded-full text-xs font-semibold border-2 border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            角色管理
+          </button>
+        </div>
+
         {/* Traditional Style Chat Panel - Full height */}
         <TraditionalChatPanel
           messages={messages}
@@ -151,7 +183,7 @@ export const ChatPage: React.FC = () => {
           onSendMessage={handleSendMessage}
           onVoiceInputStart={handleVoiceInputStart}
           onVoiceInputEnd={handleVoiceInputEnd}
-          placeholder="和妹妹聊聊天吧～"
+          placeholder="聊聊天吧～"
         />
 
         {/* TTS Toggle */}

@@ -11,14 +11,12 @@ const STORAGE_KEY = 'chat_history';
 interface UseChatOptions {
   characterId?: string;
   topicId?: number;
-  characterUuid?: string;
 }
 
 export function useChat(options?: UseChatOptions) {
   const {
     characterId = DEFAULT_CHARACTER_ID,
     topicId,
-    characterUuid,
   } = options || {};
 
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -97,7 +95,6 @@ export function useChat(options?: UseChatOptions) {
     try {
       const response = await sendMessage(request, {
         topic_id: topicId,
-        character_uuid: characterUuid || undefined,
       });
 
       const assistantMessage: DisplayMessage = {
@@ -113,7 +110,7 @@ export function useChat(options?: UseChatOptions) {
     } finally {
       setLoading(false);
     }
-  }, [messages, characterId, topicId, characterUuid, loading, addMessage]);
+  }, [messages, characterId, topicId, loading, addMessage]);
 
   const sendStream = useCallback(async (content: string) => {
     if (!content.trim() || loading) return;
@@ -158,7 +155,6 @@ export function useChat(options?: UseChatOptions) {
       let fullResponse = '';
       for await (const chunk of sendMessageStream(request, {
         topic_id: topicId,
-        character_uuid: characterUuid || undefined,
       })) {
         fullResponse += chunk;
         setStreamingMessage(fullResponse);
@@ -185,7 +181,7 @@ export function useChat(options?: UseChatOptions) {
       setLoading(false);
       setStreamingMessage('');
     }
-  }, [messages, characterId, topicId, characterUuid, loading, addMessage, saveHistory]);
+  }, [messages, characterId, topicId, loading, addMessage, saveHistory]);
 
   const clearHistory = useCallback(() => {
     setMessages([]);
@@ -221,9 +217,6 @@ export function useChat(options?: UseChatOptions) {
 
   // Get current topic ID
   const getCurrentTopicId = useCallback(() => topicId, [topicId]);
-
-  // Get current character UUID
-  const getCurrentCharacterUuid = useCallback(() => characterUuid, [characterUuid]);
 
   // TTS auto-play state
   const [autoPlayTTS, setAutoPlayTTS] = useState(() => {
@@ -262,6 +255,5 @@ export function useChat(options?: UseChatOptions) {
     // Topic support
     setMessages: setMessagesDirect,
     getCurrentTopicId,
-    getCurrentCharacterUuid,
   };
 }

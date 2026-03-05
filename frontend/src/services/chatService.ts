@@ -5,7 +5,6 @@ import type { ChatRequest, ChatResponse } from '../types/chat';
 
 interface SendMessageOptions {
   topic_id?: number;
-  character_uuid?: string;
 }
 
 export async function sendMessage(
@@ -21,9 +20,6 @@ export async function sendMessage(
 
   if (options?.topic_id !== undefined) {
     body.topic_id = options.topic_id;
-  }
-  if (options?.character_uuid) {
-    body.character_uuid = options.character_uuid;
   }
 
   return apiRequest<ChatResponse>(API_ENDPOINTS.chat(), {
@@ -59,9 +55,6 @@ export async function* sendMessageStream(
 
   if (options?.topic_id !== undefined) {
     body.topic_id = options.topic_id;
-  }
-  if (options?.character_uuid) {
-    body.character_uuid = options.character_uuid;
   }
 
   const response = await fetch(API_ENDPOINTS.chatStream(), {

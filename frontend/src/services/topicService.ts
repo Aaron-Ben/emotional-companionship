@@ -6,7 +6,6 @@ import type {
   TopicResponse,
   TopicListResponse,
   ChatHistoryResponse,
-  CharacterMappingResponse,
 } from '../types/chat';
 
 export interface CreateTopicRequest {
@@ -32,7 +31,7 @@ export async function createTopic(request: CreateTopicRequest): Promise<Topic> {
 }
 
 /**
- * List all topics, optionally filtered by character UUID
+ * List all topics, optionally filtered by character UUID (character_id IS the UUID)
  */
 export async function listTopics(characterUuid?: string): Promise<TopicListResponse> {
   const url = API_ENDPOINTS.topicList(characterUuid);
@@ -63,16 +62,6 @@ export async function getTopicHistory(
 ): Promise<ChatHistoryResponse> {
   const url = API_ENDPOINTS.topicHistory(topicId, characterUuid);
   return apiRequest<ChatHistoryResponse>(url);
-}
-
-/**
- * Resolve character_id to character_uuid
- */
-export async function resolveCharacterMapping(
-  characterId: string
-): Promise<CharacterMappingResponse> {
-  const url = API_ENDPOINTS.topicMapping(characterId);
-  return apiRequest<CharacterMappingResponse>(url);
 }
 
 /**

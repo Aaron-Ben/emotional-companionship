@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Default paths
 CHAT_DATA_DIR = Path(__file__).parent.parent.parent.parent / "data" / "chat"
+CHARACTERS_DATA_DIR = Path(__file__).parent.parent.parent.parent / "data" / "characters"
 MAPPINGS_FILE = CHAT_DATA_DIR / ".mappings.json"
 DEFAULT_TOPIC_NAME = "default"
 
@@ -88,12 +89,71 @@ class ChatHistoryService:
     def __init__(self, data_dir: Optional[Path] = None):
         """Initialize the chat history service."""
         self.data_dir = data_dir or CHAT_DATA_DIR
+        self.characters_dir = CHARACTERS_DATA_DIR
         self.mapping_service = CharacterMappingService()
         self._ensure_data_dir()
 
     def _ensure_data_dir(self):
         """Ensure data directory exists."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.characters_dir.mkdir(parents=True, exist_ok=True)
+
+    def _use_new_path_structure(self, user_id: str, character_uuid: str) -> bool:
+        """Check if the new path structure exists for this character."""
+        new_path = self.characters_dir / character_uuid / "chat" / "topics"
+        return new_path.exists()
+
+    def _get_topics_dir_new(self, character_uuid: str) -> Path:
+        """Get topics directory path using new structure (data/characters/{uuid}/chat/topics/)."""
+        return self.characters_dir / character_uuid / "chat" / "topics"
+
+    def _get_topic_dir_new(self, character_uuid: str, topic_id: int) -> Path:
+        """Get specific topic directory path using new structure."""
+        return self._get_topics_dir_new(character_uuid) / str(topic_id)
+
+    def _get_history_file_new(self, character_uuid: str, topic_id: int) -> Path:
+        """Get history.json file path for a topic using new structure."""
+        return self._get_topic_dir_new(character_uuid, topic_id) / "history.json"
+
+    def _get_topics_dir(self, user_id: str, character_uuid: str) -> Path:
+        """Get topics directory path - checks both old and new structures."""
+        # Check new path first (data/characters/{uuid}/chat/topics/)
+        new_path = self._get_topics_dir_new(character_uuid)
+        if new_path.exists():
+            return new_path
+
+        # Fall back to old path (data/chat/user_default/{uuid}/topics/)
+        return self._get_character_dir(user_id, character_uuid) / "topics"
+
+    def _get_topic_dir(self, user_id: str, character_uuid: str, topic_id: int) -> Path:
+        """Get specific topic directory path - checks both old and new structures."""
+        # Check new path first
+        new_path = self._get_topic_dir_new(character_uuid, topic_id)
+        if new_path.exists():
+            return new_path
+
+        # Fall back to old path
+        return self._get_topics_dir(user_id, character_uuid) / str(topic_id)
+
+    def _get_history_file(self, user_id: str, character_uuid: str, topic_id: int) -> Path:
+        """Get history.json file path for a topic - checks both old and new structures."""
+        # Check new path first
+        new_path = self._get_history_file_new(character_uuid, topic_id)
+        if new_path.exists():
+            return new_path
+
+        # Fall back to old path
+        return self._get_topic_dir(user_id, character_uuid, topic_id) / "history.json"
+
+    def _ensure_topic_dirs(self, user_id: str, character_uuid: str):
+        """Ensure topics directory exists - uses new structure by default."""
+        # Use new path structure for new characters
+        new_topics_dir = self._get_topics_dir_new(character_uuid)
+        new_topics_dir.mkdir(parents=True, exist_ok=True)
+
+        # Also ensure old structure exists for backward compatibility
+        old_topics_dir = self._get_character_dir(user_id, character_uuid) / "topics"
+        old_topics_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_user_dir(self, user_id: str) -> Path:
         """Get user directory path."""

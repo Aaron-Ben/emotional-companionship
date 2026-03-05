@@ -6,7 +6,6 @@ import {
   listTopics,
   deleteTopic,
   getTopicHistory,
-  resolveCharacterMapping,
 } from '../services/topicService';
 import type {
   TopicListItem,
@@ -23,7 +22,6 @@ interface UseTopicsOptions {
 interface UseTopicsReturn {
   topics: TopicListItem[];
   currentTopicId: number | null;
-  characterUuid: string | null;
   loading: boolean;
   error: string | null;
   createNewTopic: () => Promise<number | null>;
@@ -34,38 +32,12 @@ interface UseTopicsReturn {
 }
 
 const TOPIC_STORAGE_KEY = 'current_topic_id';
-const UUID_STORAGE_KEY_PREFIX = 'character_uuid_';
 
 export function useTopics({ characterId, onTopicChange }: UseTopicsOptions): UseTopicsReturn {
   const [topics, setTopics] = useState<TopicListItem[]>([]);
   const [currentTopicId, setCurrentTopicId] = useState<number | null>(null);
-  const [characterUuid, setCharacterUuid] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Resolve character UUID on mount
-  useEffect(() => {
-    const resolveUUID = async () => {
-      try {
-        // Check cache first
-        const cachedUuid = localStorage.getItem(`${UUID_STORAGE_KEY_PREFIX}${characterId}`);
-        if (cachedUuid) {
-          setCharacterUuid(cachedUuid);
-          return;
-        }
-
-        // Resolve from API
-        const response = await resolveCharacterMapping(characterId);
-        setCharacterUuid(response.character_uuid);
-        localStorage.setItem(`${UUID_STORAGE_KEY_PREFIX}${characterId}`, response.character_uuid);
-      } catch (err) {
-        console.error('Failed to resolve character UUID:', err);
-        setError('Failed to initialize character');
-      }
-    };
-
-    resolveUUID();
-  }, [characterId]);
 
   // Load current topic from localStorage
   useEffect(() => {
@@ -75,14 +47,12 @@ export function useTopics({ characterId, onTopicChange }: UseTopicsOptions): Use
     }
   }, []);
 
-  // Load topics list
+  // Load topics list - characterId IS the UUID
   const refreshTopics = useCallback(async () => {
-    if (!characterUuid) return;
-
     setLoading(true);
     setError(null);
     try {
-      const response = await listTopics(characterUuid);
+      const response = await listTopics(characterId);
       // Transform API response to TopicListItem format
       const { formatTimeAgo } = await import('../services/topicService');
       const topicListItems: TopicListItem[] = response.topics.map((topicResponse) => ({
@@ -104,14 +74,12 @@ export function useTopics({ characterId, onTopicChange }: UseTopicsOptions): Use
     } finally {
       setLoading(false);
     }
-  }, [characterUuid]);
+  }, [characterId]);
 
-  // Load topics when UUID is available
+  // Load topics when characterId changes
   useEffect(() => {
-    if (characterUuid) {
-      refreshTopics();
-    }
-  }, [characterUuid, refreshTopics]);
+    refreshTopics();
+  }, [characterId, refreshTopics]);
 
   // Convert API messages to DisplayMessage format
   const convertToDisplayMessages = useCallback((messages: ChatMessageResponse[]): DisplayMessage[] => {
@@ -125,12 +93,10 @@ export function useTopics({ characterId, onTopicChange }: UseTopicsOptions): Use
 
   // Load messages for a specific topic
   const loadTopicMessages = useCallback(async (topicId: number): Promise<DisplayMessage[]> => {
-    if (!characterUuid) return [];
-
     setLoading(true);
     setError(null);
     try {
-      const response: ChatHistoryResponse = await getTopicHistory(topicId, characterUuid);
+      const response: ChatHistoryResponse = await getTopicHistory(topicId, characterId);
       const displayMessages = convertToDisplayMessages(response.messages);
       return displayMessages;
     } catch (err) {
@@ -141,18 +107,16 @@ export function useTopics({ characterId, onTopicChange }: UseTopicsOptions): Use
     } finally {
       setLoading(false);
     }
-  }, [characterUuid, convertToDisplayMessages]);
+  }, [characterId, convertToDisplayMessages]);
 
   // Create a new topic
   const createNewTopic = useCallback(async (): Promise<number | null> => {
-    if (!characterUuid) return null;
-
     setLoading(true);
     setError(null);
     try {
       const newTopic = await createTopic({
         character_id: characterId,
-        character_uuid: characterUuid,
+        character_uuid: characterId,
       });
 
       // Refresh the topics list
@@ -174,7 +138,7 @@ export function useTopics({ characterId, onTopicChange }: UseTopicsOptions): Use
     } finally {
       setLoading(false);
     }
-  }, [characterId, characterUuid, refreshTopics, onTopicChange]);
+  }, [characterId, refreshTopics, onTopicChange]);
 
   // Select an existing topic
   const selectTopic = useCallback(async (topicId: number) => {
@@ -186,12 +150,10 @@ export function useTopics({ characterId, onTopicChange }: UseTopicsOptions): Use
 
   // Delete a topic
   const deleteTopicById = useCallback(async (topicId: number) => {
-    if (!characterUuid) return;
-
     setLoading(true);
     setError(null);
     try {
-      await deleteTopic(topicId, characterUuid);
+      await deleteTopic(topicId, characterId);
 
       // If we deleted the current topic, switch to another
       if (topicId === currentTopicId) {
@@ -214,12 +176,11 @@ export function useTopics({ characterId, onTopicChange }: UseTopicsOptions): Use
     } finally {
       setLoading(false);
     }
-  }, [characterUuid, currentTopicId, topics, selectTopic, createNewTopic, refreshTopics]);
+  }, [characterId, currentTopicId, topics, selectTopic, createNewTopic, refreshTopics]);
 
   return {
     topics,
     currentTopicId,
-    characterUuid,
     loading,
     error,
     createNewTopic,
