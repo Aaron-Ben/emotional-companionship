@@ -67,4 +67,27 @@
   .scrollbar-elegant::-webkit-scrollbar-thumb:hover {
     background-color: rgba(244, 63, 94, 0.5);
   }
+
+  /* Markdown content styles - using Tailwind prose plugin */
+  .markdown-content {
+    @apply prose prose-sm max-w-none dark:prose-invert
+           prose-p:text-neutral-700 prose-p:dark:text-neutral-300
+           prose-headings:text-neutral-800 prose-headings:dark:text-neutral-100
+           prose-strong:text-neutral-900 prose-strong:dark:text-neutral-100 prose-strong:font-semibold
+           prose-code:text-rose-600 prose-code:dark:text-rose-400 prose-code:bg-neutral-100 prose-code:dark:bg-neutral-700 prose-code:px-1 prose-code:py-0.5 prose-code:rounded
+           prose-a:text-rose-500 prose-a:dark:text-rose-400
+           prose-pre:bg-neutral-100 prose-pre:dark:bg-neutral-700 prose-pre:rounded-lg;
+  }
+
+  /* Nested list support */
+  .markdown-content ul ul,
+  .markdown-content ol ol,
+  .markdown-content ul ol,
+  .markdown-content ol ul {
+    @apply my-1 ml-4;
+  }
+
+  .markdown-content li {
+    @apply my-1;
+  }
 }

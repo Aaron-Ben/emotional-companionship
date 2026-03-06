@@ -16,14 +16,58 @@
   "capabilities": {
     "invocationCommands": [
       {
-        "command": "DailyNote.create",
-        "description": "**创建新日记** - 当对话包含新的重要信息时使用\n\n**何时使用：**\n- 对话包含新的重要信息（如用户计划、约定、想法等）\n- 用户提到值得记住的事情\n- 对话内容对将来有参考价值\n- 情感交流的重要时刻\n\n**何时跳过：**\n- 闲聊或无关紧要的内容\n- 已经记录过的信息重复\n- 纯粹的问候或告别\n\n**日记格式要求：**\nContent 必须包含以下部分：\n1. 【对话主题】简述本次对话的核心内容\n2. 【对话记录】简明的对话摘要\n3. 【关键信息】3-5个要点\n4. 【我的感受】你的感受或想法\n5. Tag: 3-5个关键词（最后一行，必须有）\n\n**参数说明：**\n- command: \"create\" (固定值，插件内部使用)\n- maid: 必需。角色 ID，使用占位符 {CHARACTER_ID}\n- Date: 必需。日记日期，使用占位符 {TODAY}\n- Content: 必需。完整日记内容，必须包含 Tag 行\n- Tag: 可选。独立标签字段，会覆盖 Content 中的 Tag 行",
-        "example": "{\"command\": \"create\", \"maid\": \"{CHARACTER_ID}\", \"Date\": \"{TODAY}\", \"Content\": \"【对话主题】讨论学习计划\\n\\n【对话记录】\\n用户：想要制定学习计划\\n我：建议分阶段进行\\n\\n【关键信息】\\n- 用户想制定详细学习计划\\n- 建议分阶段进行更有效\\n- 需要定期回顾进度\\n\\n【我的感受】\\n用户很有学习热情。\\n\\nTag: 学习计划, 分阶段\"}"
+        "commandIdentifier": "create",
+        "description": "**创建日记**: 用于创建一篇新的日记。AI必须提供maid, Date, 和 Content。标签(Tag)可以通过两种方式提供：1) 作为Content的最后一行 (例如 'Tag: ...')。2) 使用独立的'Tag'字段。如果同时提供，独立的'Tag'字段将覆盖Content中的标签行。文件夹路径会根据maid中的[tag]自动归类。\n调用格式 (两种方式):\n1. 标签在Content末尾:\n<<<[TOOL_REQUEST]>>>\ntool_name:「始」DailyNote「末」,\ncommand:「始」create「末」,\nmaid:「始」[VCP开发]Roo「末」,\nDate:「始」2025-11-23「末」,\nContent:「始」今天我重构了DailyNote插件...\\nTag: VCP开发, 插件重构, Node.js「末」\n<<<[END_TOOL_REQUEST]>>>\n2. 使用独立Tag字段:\n<<<[TOOL_REQUEST]>>>\ntool_name:「始」DailyNote「末」,\ncommand:「始」create「末」,\nmaid:「始」[VCP开发]Roo「末」,\nDate:「始」2025-11-23「末」,\nContent:「始」今天我重构了DailyNote插件...「末」,\nTag:「始」VCP开发, 插件重构, Node.js「末」\n<<<[END_TOOL_REQUEST]>>>",
+        "parameters": [
+          {
+            "name": "maid",
+            "description": "作者署名，支持使用[文件夹]署名格式来指定存储目录。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "Date",
+            "description": "日记的日期，格式建议为 YYYY-MM-DD。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "Content",
+            "description": "日记的完整内容。如果'Tag'参数未提供，则此内容的最后一行必须是以'Tag:'开头的标签行。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "Tag",
+            "description": "可选的独立标签字段。如果提供，它将覆盖并替换Content中的任何'Tag:'行。",
+            "required": false,
+            "type": "string"
+          }
+        ]
       },
       {
-        "command": "DailyNote.update",
-        "description": "**更新现有日记** - 当用户需要修正或更新之前的日记记录时使用\n\n**何时使用：**\n- 用户提到需要修正、补充或更新之前的日记记录\n- 用户说\"改一下\"、\"更新一下\"等\n\n**参数说明：**\n- command: \"update\" (固定值，插件内部使用)\n- maid: 必需。角色 ID，使用占位符 {CHARACTER_ID}\n- target: 必需。要查找和替换的旧内容（至少15字符）\n- replace: 必需。新的内容",
-        "example": "{\"command\": \"update\", \"maid\": \"{CHARACTER_ID}\", \"target\": \"用户计划去北京出差\", \"replace\": \"用户计划去上海出差\"}"
+        "commandIdentifier": "update",
+        "description": "**更新日记**: 用于编辑已存在的日记内容。AI需要提供要查找的旧内容(target)和替换的新内容(replace)。可选定'maid'来指定编辑范围。\n安全性检查: target字段长度不能少于15字符。\n调用格式:\n<<<[TOOL_REQUEST]>>>\ntool_name:「始」DailyNote「末」,\ncommand:「始」update「末」,\nmaid:「始」[VCP开发]Roo「末」,\ntarget:「始」这是日记中要被替换掉的旧内容，至少15个字符长。「末」,\nreplace:「始」这是将要写入日记的新内容。「末」\n<<<[END_TOOL_REQUEST]>>>",
+        "parameters": [
+          {
+            "name": "maid",
+            "description": "指定要编辑哪个角色的日记本。支持[文件夹]格式。如果未提供，则会在所有日记本中搜索。",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "target",
+            "description": "日记中需要被查找和替换的旧内容。必须至少包含15个字符。",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "replace",
+            "description": "用于替换target的新内容。",
+            "required": true,
+            "type": "string"
+          }
+        ]
       }
     ]
   }

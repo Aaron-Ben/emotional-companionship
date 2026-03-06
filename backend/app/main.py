@@ -9,10 +9,14 @@ from pathlib import Path
 
 # Load environment variables from .env file (try multiple locations)
 env_paths = [
+    Path(__file__).parent.parent / ".env",  # Backend directory
     Path(__file__).parent.parent.parent / ".env",  # Project root
-    Path(__file__).parent / ".env",  # Backend directory
 ]
-load_dotenv(env_paths[0], override=True)  # Load from project root
+# Try to load from backend directory first, then project root
+for env_path in env_paths:
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+        break
 
 from app.api.v1 import character, chat, diary, chat_history
 from app.services.character_storage_service import CharacterStorageService

@@ -68,6 +68,7 @@ export default {
     },
   },
   plugins: [
+    require('@tailwindcss/typography'),
     function({ addUtilities }) {
       addUtilities({
         '.scrollbar-elegant': {

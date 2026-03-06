@@ -209,7 +209,19 @@ class CharacterStorageService:
             # Remove name heading if present
             lines = content.split('\n')
             if lines and lines[0].startswith('# '):
-                return '\n'.join(lines[1:]).lstrip()
+                content = '\n'.join(lines[1:]).lstrip()
+
+            # Replace {{daily}} placeholder with daily_edit.txt content
+            if '{{daily}}' in content:
+                daily_edit_path = Path(__file__).parent.parent.parent / "plugins" / "daily_note" / "daily_edit.txt"
+                try:
+                    daily_content = daily_edit_path.read_text(encoding='utf-8')
+                    content = content.replace('{{daily}}', daily_content)
+                    logger.debug(f"Replaced {{daily}} placeholder for {character_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to load daily_edit.txt: {e}")
+                    content = content.replace('{{daily}}', '')
+
             return content
         except Exception as e:
             logger.error(f"Error reading prompt for {character_id}: {e}")

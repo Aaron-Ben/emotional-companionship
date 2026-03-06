@@ -1,6 +1,10 @@
 /** Diary detail modal component - Refined elegant style */
 
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { DiaryEntry, extractDateFromPath } from '../../services/diaryService';
 
 interface DiaryDetailModalProps {
@@ -9,6 +13,25 @@ interface DiaryDetailModalProps {
   onClose: () => void;
   characterName?: string;
 }
+
+/**
+ * 将 LaTeX 数学公式格式转换为 remark-math 格式
+ */
+const convertLatexMath = (text: string): string => {
+  let result = text;
+
+  // 处理块级公式 \[ ... \] -> $$ ... $$
+  result = result.replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (_match, content) => {
+    return `$$${content.trim()}$$`;
+  });
+
+  // 处理行内公式 \( ... \) -> $ ... $
+  result = result.replace(/\\\(\s*(.*?)\s*\\\)/g, (_match, content) => {
+    return `$${content.trim()}$`;
+  });
+
+  return result;
+};
 
 export const DiaryDetailModal: React.FC<DiaryDetailModalProps> = ({
   diary,
@@ -20,6 +43,9 @@ export const DiaryDetailModal: React.FC<DiaryDetailModalProps> = ({
 
   // Extract date from path
   const date = extractDateFromPath(diary.path);
+
+  // 转换 LaTeX 数学公式格式
+  const formattedContent = convertLatexMath(diary.content);
 
   return (
     <div
@@ -61,13 +87,14 @@ export const DiaryDetailModal: React.FC<DiaryDetailModalProps> = ({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 scrollbar-elegant">
-          {/* Diary content */}
-          <div className="mb-6">
-            <div className="prose prose-sm max-w-none">
-              <p className="text-neutral-700 dark:text-neutral-300 leading-loose whitespace-pre-wrap text-base">
-                {diary.content}
-              </p>
-            </div>
+          {/* Diary content with Markdown support */}
+          <div className="mb-6 markdown-content">
+            <ReactMarkdown
+              remarkPlugins={[[remarkMath, { singleDollarTextMath: true }], remarkGfm]}
+              rehypePlugins={[rehypeKatex]}
+            >
+              {formattedContent}
+            </ReactMarkdown>
           </div>
 
           {/* Metadata */}

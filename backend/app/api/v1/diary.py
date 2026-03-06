@@ -37,12 +37,6 @@ class AIUpdateDiaryRequest(BaseModel):
     character_id: Optional[str] = Field(None, description="角色 ID（可选，用于指定搜索范围）")
 
 
-class DiaryResponse(BaseModel):
-    """日记响应"""
-    diary: DiaryEntry
-    message: str
-
-
 # Dependency injection
 def get_diary_file_service():
     """获取日记文件服务实例"""

@@ -52,30 +52,3 @@ class ChatTopic(BaseModel):
                 "message_count": 10
             }
         }
-
-
-class ChatHistory(BaseModel):
-    """Chat history containing a list of messages."""
-    messages: List[ChatMessage] = Field(default_factory=list, description="List of chat messages")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "messages": [
-                    {
-                        "id": "msg_1770291136799_user_k6mjdfb",
-                        "role": "user",
-                        "name": "用户名",
-                        "content": "你好",
-                        "timestamp": 1770291136799
-                    },
-                    {
-                        "id": "msg_1770291136807_assistant_t5241e8",
-                        "role": "assistant",
-                        "name": "角色名",
-                        "content": "回复内容",
-                        "timestamp": 1770291136807
-                    }
-                ]
-            }
-        }

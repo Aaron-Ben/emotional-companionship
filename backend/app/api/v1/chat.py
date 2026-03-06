@@ -1,10 +1,9 @@
 """Chat API endpoints for character-based conversations."""
 
-from typing import Optional, Dict, List
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from datetime import datetime
-import asyncio
 import logging
 import os
 
@@ -31,11 +30,6 @@ def get_character_service() -> CharacterStorageService:
     """Dependency injection for CharacterStorageService."""
     return CharacterStorageService()
 
-
-# Load environment variables once at module load
-from dotenv import load_dotenv
-from pathlib import Path
-_env_loaded = load_dotenv(Path(__file__).parent.parent.parent.parent / ".env", override=True)
 
 def get_llm_service() -> LLM:
     """
@@ -70,147 +64,6 @@ def get_user_preferences(
     """Get user preferences from store."""
     key = f"{user_id}_{character_id}"
     return _user_preferences_store.get(key)
-
-
-async def extract_and_save_diary(
-    character_id: str,
-    user_id: str,
-    conversation_messages: List[Dict[str, str]],
-    llm: LLM,
-    plugin_manager
-):
-    """
-    Extract and save diary from conversation using DailyNote plugin (async).
-
-    This runs in the background after a response is sent.
-    AI will evaluate if the conversation is worth recording and extract diary content.
-
-    Args:
-        character_id: Character ID (used as maid parameter)
-        user_id: User ID
-        conversation_messages: Current conversation messages
-        llm: LLM instance for evaluation and extraction
-        plugin_manager: PluginManager for calling DailyNote plugin
-    """
-    try:
-        logger.info(f"Evaluating diary extraction for {user_id}/{character_id}")
-
-        # Build conversation text for evaluation
-        conversation_text = "\n".join([
-            f"{msg['role']}: {msg['content']}"
-            for msg in conversation_messages
-        ])
-
-        # Step 1: Evaluate if worth recording and what action to take
-        evaluation_prompt = f"""分析以下对话，判断应该如何处理日记。
-
-对话内容：
-{conversation_text}
-
-请只回答以下选项之一：
-- "CREATE" - 需要创建新日记（对话包含新的重要信息）
-- "UPDATE" - 需要更新已有日记（对话提到修正或补充之前的记录）
-- "SKIP" - 不需要记录（对话内容不重要）
-
-判断标准：
-1. 包含新的重要信息 → CREATE
-2. 提到修正、补充、更新之前的记录 → UPDATE
-3. 无关紧要的内容 → SKIP
-
-如果选择 UPDATE，请用格式：UPDATE | 原内容片段 | 新内容片段
-如果选择 CREATE 或 SKIP，只需返回选项本身。
-
-示例：
-- CREATE
-- UPDATE | 哥哥去了北京出差 | 哥哥去了上海出差
-- SKIP"""
-
-        evaluation = llm.generate_response([
-            {"role": "system", "content": "你是一个日记记录助手，负责判断如何处理日记。"},
-            {"role": "user", "content": evaluation_prompt}
-        ])
-
-        logger.info(f"Diary evaluation: {evaluation}")
-
-        if "SKIP" in evaluation.upper() or "跳过" in evaluation:
-            logger.info(f"Diary evaluation: skipped for {user_id}/{character_id}")
-            return
-
-        from datetime import datetime
-
-        # Step 2: Handle UPDATE case
-        if "UPDATE" in evaluation.upper():
-            # Parse evaluation to extract target and replace content
-            parts = evaluation.split("|")
-            if len(parts) == 3:
-                target = parts[1].strip()
-                replace_content = parts[2].strip()
-
-                # Use DailyNote plugin via plugin_manager
-                result = await plugin_manager.process_tool_call("DailyNote", {
-                    "command": "update",
-                    "maid": character_id,
-                    "target": target,
-                    "replace": replace_content
-                })
-
-                if result.get("status") == "success":
-                    logger.info(f"Diary updated successfully: {result.get('path')}")
-                else:
-                    logger.warning(f"Diary update failed: {result.get('error')}")
-            else:
-                logger.warning(f"Invalid UPDATE format: {evaluation}")
-            return
-
-        # Step 3: Handle CREATE case
-        diary_prompt = f"""根据以下对话，提取日记内容。
-
-对话内容：
-{conversation_text}
-
-请按照以下格式生成日记：
-
-【对话主题】简述本次对话的核心内容
-
-【对话记录】
-哥哥：...
-我：...
-
-【关键信息】
-- 要点1
-- 要点2
-
-【我的感受】
-
-Tag: 关键词1, 关键词2, 关键词3
-
-注意：
-1. 日记要简洁，突出重点
-2. Tag 要包含3-5个关键词
-3. 只返回日记内容，不要其他解释"""
-
-        diary_content = llm.generate_response([
-            {"role": "system", "content": "你是一个日记记录助手，负责从对话中提取日记内容。"},
-            {"role": "user", "content": diary_prompt}
-        ])
-
-        # Step 4: Create new diary using DailyNote plugin
-        today = datetime.now().strftime("%Y-%m-%d")
-
-        result = await plugin_manager.process_tool_call("DailyNote", {
-            "command": "create",
-            "maid": character_id,
-            "Date": today,
-            "Content": diary_content
-        })
-
-        if result.get("status") == "success":
-            logger.info(f"Diary created successfully: {result.get('path')}")
-        else:
-            logger.error(f"Failed to create diary: {result.get('error')}")
-
-    except Exception as e:
-        logger.error(f"Error extracting/saving diary: {e}")
 
 
 @router.post("/", response_model=ChatResponse)

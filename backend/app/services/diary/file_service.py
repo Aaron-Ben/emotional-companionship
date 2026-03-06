@@ -21,9 +21,6 @@ logger = logging.getLogger(__name__)
 # 默认角色目录
 DEFAULT_CHARACTERS_DIR = Path(__file__).parent.parent.parent.parent.parent / "data" / "characters"
 
-# 忽略的文件夹列表
-IGNORED_FOLDERS = ['MusicDiary']
-
 
 def get_characters_dir() -> Path:
     """获取角色目录"""
@@ -132,7 +129,7 @@ class DiaryFileService:
         db = SessionLocal()
         try:
             names = db.query(DiaryFileTable.diary_name).distinct().all()
-            return [name[0] for name in names if name[0] not in IGNORED_FOLDERS]
+            return [name[0] for name in names]
         finally:
             db.close()
 

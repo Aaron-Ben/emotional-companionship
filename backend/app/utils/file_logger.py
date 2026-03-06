@@ -105,42 +105,6 @@ class DailyFileHandler(logging.Handler):
         self._close_file()
 
 
-def setup_file_logger(
-    logger_name: str = "chat_logs",
-    level: int = logging.INFO,
-    logs_dir: Optional[Path] = None
-) -> logging.Logger:
-    """
-    Set up a file logger with daily rotation.
-
-    Args:
-        logger_name: Name for the logger
-        level: Logging level (default: INFO)
-        logs_dir: Custom logs directory (default: data/logs/)
-
-    Returns:
-        Configured logger instance
-    """
-    logger = logging.getLogger(logger_name)
-    logger.setLevel(level)
-
-    # Avoid adding duplicate handlers
-    if not logger.handlers:
-        # Create file handler
-        file_handler = DailyFileHandler(logs_dir)
-
-        # Format: timestamp - logger_name - level - message
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        file_handler.setFormatter(formatter)
-
-        logger.addHandler(file_handler)
-
-    return logger
-
-
 def get_log_content(date: Optional[datetime] = None) -> str:
     """
     Get log content for a specific date.

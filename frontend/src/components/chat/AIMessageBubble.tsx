@@ -47,11 +47,12 @@ const ToolRequestCollapsible: React.FC<{ content: string }> = ({ content }) => {
   // 解析工具请求内容
   const parseToolRequest = (text: string) => {
     const params: Record<string, string> = {};
-    // 匹配 tool_name, maid, keyword, windowsize 等参数
-    const matches = text.match(/(\w+):「始」(.+?)「末」/g);
+    // 匹配 tool_name, maid, keyword, windowsize, Content 等参数
+    // 使用 [\s\S]+? 来匹配包括换行符在内的所有字符
+    const matches = text.match(/(\w+):「始」([\s\S]+?)「末」/g);
     if (matches) {
       matches.forEach((match) => {
-        const [, key, value] = match.match(/(\w+):「始」(.+?)「末」/) || [];
+        const [, key, value] = match.match(/(\w+):「始」([\s\S]+?)「末」/) || [];
         if (key && value) {
           params[key] = value;
         }
@@ -88,15 +89,20 @@ const ToolRequestCollapsible: React.FC<{ content: string }> = ({ content }) => {
 
       {isExpanded && (
         <div className="mt-2 px-4 py-3 bg-blue-50/50 dark:bg-blue-950/20 border-2 border-blue-200 dark:border-blue-800 rounded-lg">
-          <div className="space-y-1.5 text-sm">
+          <div className="space-y-1.5 text-sm max-h-96 overflow-y-auto">
             {Object.entries(params).map(([key, value]) => (
               <div key={key} className="flex gap-2">
-                <span className="font-semibold text-blue-700 dark:text-blue-400 min-w-[80px]">
+                <span className="font-semibold text-blue-700 dark:text-blue-400 min-w-[80px] flex-shrink-0 text-sm">
                   {key}:
                 </span>
-                <span className="text-neutral-700 dark:text-neutral-300 break-all">
-                  {value}
-                </span>
+                <div className="text-neutral-700 dark:text-neutral-300 break-words flex-1 text-sm prose prose-sm max-w-none dark:prose-invert">
+                  <ReactMarkdown
+                    remarkPlugins={[[remarkMath, { singleDollarTextMath: true }], remarkGfm]}
+                    rehypePlugins={[rehypeKatex]}
+                  >
+                    {value}
+                  </ReactMarkdown>
+                </div>
               </div>
             ))}
           </div>
@@ -107,37 +113,26 @@ const ToolRequestCollapsible: React.FC<{ content: string }> = ({ content }) => {
 };
 
 /**
- * 将括号格式的数学表达式转换为标准 LaTeX 格式
- * 例如：( \Psi(x,t) ) -> $\Psi(x,t)$
- * ( \frac{a}{b} ) -> $\frac{a}{b}$
+ * 将 LaTeX 数学公式格式转换为 remark-math 格式
+ * LaTeX 标准格式：
+ * - \( ... \) 表示行内公式
+ * - \[ ... \] 表示块级公式
+ *
+ * 转换为：
+ * - $ ... $ 表示行内公式
+ * - $$ ... $$ 表示块级公式
  */
-const convertMathNotation = (text: string): string => {
-  // 匹配括号内包含 LaTeX 数学表达式的内容
-  // 支持单行和多行数学表达式，包含常见的 LaTeX 命令
-  const patterns = [
-    // 简单情况：( \frac{a}{b} ) -> $\frac{a}{b}$
-    /\(\s*\\[a-zA-Z]+(?:\{[^}]*\}|\([^)]*\)|[^\s{}()])*\s*\)/g,
-    // 复杂情况：嵌套括号和更多 LaTeX 语法
-    /\(\s*\\[a-zA-Z]+(?:\{[^{}]*\}(?:\{[^{}]*\})*|\([^)]*\)|[^\s{}()])*[\s{}()\\a-zA-Z0-9]*\s*\)/g,
-  ];
-
+const convertLatexMath = (text: string): string => {
   let result = text;
 
-  // 使用所有模式进行替换
-  for (const pattern of patterns) {
-    result = result.replace(pattern, (match) => {
-      // 移除外层括号，添加 $ 符号
-      const innerContent = match.slice(1, -1).trim();
-      return `$${innerContent}$`;
-    });
-  }
+  // 处理块级公式 \[ ... \] -> $$ ... $$
+  result = result.replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (_match, content) => {
+    return `$$${content.trim()}$$`;
+  });
 
-  // 特殊处理：检测包含 LaTeX 特征的括号内容
-  // LaTeX 特征：反斜杠后跟字母，如 \Psi, \frac, \partial, \hbar 等
-  const latexPattern = /\(\s*(?:\\[a-zA-Z]+\{?[^)]*\}?|\s*\\[a-zA-Z]+\s*)+\s*\)/g;
-  result = result.replace(latexPattern, (match) => {
-    const innerContent = match.slice(1, -1).trim();
-    return `$${innerContent}$`;
+  // 处理行内公式 \( ... \) -> $ ... $
+  result = result.replace(/\\\(\s*(.*?)\s*\\\)/g, (_match, content) => {
+    return `$${content.trim()}$`;
   });
 
   return result;
@@ -175,8 +170,8 @@ export const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
   };
 
   const { toolRequests, content: cleanContent } = parseContent(content);
-  // 转换数学符号格式
-  const formattedContent = convertMathNotation(cleanContent);
+  // 转换 LaTeX 数学公式格式
+  const formattedContent = convertLatexMath(cleanContent);
 
   return (
     <div className={clsx('flex flex-col max-w-[85%] md:max-w-[70%] items-start', className)}>
@@ -191,51 +186,8 @@ export const AIMessageBubble: React.FC<AIMessageBubbleProps> = ({
           {/* 正常的 Markdown 内容 */}
           {cleanContent && (
             <ReactMarkdown
-              remarkPlugins={[remarkGfm, remarkMath]}
+              remarkPlugins={[[remarkMath, { singleDollarTextMath: true }], remarkGfm]}
               rehypePlugins={[rehypeKatex]}
-              components={{
-                // 标题样式
-                h1: ({ children }) => <h1 className="text-xl font-bold mt-3 mb-2">{children}</h1>,
-                h2: ({ children }) => <h2 className="text-lg font-bold mt-2 mb-1">{children}</h2>,
-                h3: ({ children }) => <h3 className="text-base font-semibold mt-2 mb-1">{children}</h3>,
-                // 段落样式
-                p: ({ children }) => <p className="my-1">{children}</p>,
-                // 列表样式
-                ul: ({ children }) => <ul className="list-disc list-inside my-1 ml-2">{children}</ul>,
-                ol: ({ children }) => <ol className="list-decimal list-inside my-1 ml-2">{children}</ol>,
-                li: ({ children }) => <li className="my-0.5">{children}</li>,
-                // 代码块样式
-                code: ({ className, children }) => {
-                  const isInline = !className;
-                  return isInline ? (
-                    <code className="bg-neutral-100 dark:bg-neutral-700 px-1.5 py-0.5 rounded text-sm font-mono text-rose-600 dark:text-rose-400">
-                      {children}
-                    </code>
-                  ) : (
-                    <code className={clsx('block bg-neutral-100 dark:bg-neutral-700 px-3 py-2 rounded-lg text-sm font-mono overflow-x-auto my-2', className)}>
-                      {children}
-                    </code>
-                  );
-                },
-                pre: ({ children }) => <pre className="bg-neutral-100 dark:bg-neutral-700 rounded-lg p-3 overflow-x-auto my-2">{children}</pre>,
-                // 引用样式
-                blockquote: ({ children }) => (
-                  <blockquote className="border-l-4 border-neutral-300 dark:border-neutral-600 pl-3 italic my-2 text-neutral-600 dark:text-neutral-400">
-                    {children}
-                  </blockquote>
-                ),
-                // 分隔线样式
-                hr: () => <hr className="border-neutral-200 dark:border-neutral-700 my-3" />,
-                // 链接样式
-                a: ({ href, children }) => (
-                  <a href={href} className="text-rose-500 dark:text-rose-400 hover:underline" target="_blank" rel="noopener noreferrer">
-                    {children}
-                  </a>
-                ),
-                // 加粗和斜体
-                strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                em: ({ children }) => <em className="italic">{children}</em>,
-              }}
             >
               {formattedContent}
             </ReactMarkdown>
