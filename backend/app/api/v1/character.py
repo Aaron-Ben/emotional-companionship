@@ -3,7 +3,7 @@
 from typing import Optional, Dict
 from fastapi import APIRouter, HTTPException, Depends
 
-from app.services.character_storage_service import CharacterStorageService
+from app.services.character_service import CharacterStorageService
 from app.services.chat_history_service import ChatHistoryService
 from app.schemas.character import (
     CreateCharacterRequest,

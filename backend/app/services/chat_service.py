@@ -17,7 +17,7 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 from app.services.llm import LLM
-from app.services.character_storage_service import CharacterStorageService
+from app.services.character_service import CharacterStorageService
 from app.models.character import UserCharacterPreference
 from app.schemas.message import (
     ChatRequest,
@@ -197,14 +197,21 @@ class ChatService:
             # Replace placeholders in tool call arguments
             from datetime import datetime
             today = datetime.now().strftime("%Y-%m-%d")
+            current_time = datetime.now().strftime("%H:%M")
             character_id = request.character_id
+
+            # Get character name for diary plugin
+            character = self.character_service.get_character(character_id)
+            character_name = character.name if character else character_id
 
             for tc in tool_calls:
                 if tc.args:
                     for key, value in tc.args.items():
                         if isinstance(value, str):
                             value = value.replace("{CHARACTER_ID}", character_id)
+                            value = value.replace("{CHARACTER_NAME}", character_name)
                             value = value.replace("{TODAY}", today)
+                            value = value.replace("{CURRENT_TIME}", current_time)
                             tc.args[key] = value
 
             # Execute tools

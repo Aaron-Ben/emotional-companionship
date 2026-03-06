@@ -1,16 +1,14 @@
 """Character storage service for file system based character management.
 
 Characters are stored as:
-- data/characters/{uuid}/prompt.md - Character system prompt
-- data/characters/{uuid}/daily/ - Diary files
+- data/characters/{character_name}/prompt.md - Character system prompt
+- data/characters/{character_name}/daily/ - Diary files
 
-Chat history is managed by ChatHistoryService in data/history/.
-
-The character_id IS the UUID - no separate mapping needed.
+The character_id IS the character_name - no separate mapping needed.
 """
 
-import uuid
 import logging
+import re
 import shutil
 from pathlib import Path
 from typing import List, Optional
@@ -26,12 +24,35 @@ logger = logging.getLogger(__name__)
 DEFAULT_CHARACTERS_DIR = Path(__file__).parent.parent.parent.parent / "data" / "characters"
 
 
-class CharacterStorageService:
+class CharacterService:
     """Service for managing characters using file system storage."""
 
     def __init__(self, characters_dir: Optional[Path] = None):
         self.characters_dir = characters_dir or DEFAULT_CHARACTERS_DIR
         self.characters_dir.mkdir(parents=True, exist_ok=True)
+
+    def _sanitize_name(self, name: str) -> str:
+        """Sanitize character name for use as directory name."""
+        # Remove file system invalid characters
+        sanitized = re.sub(r'[\\/:*?"<>|]', '', name.strip())
+        # Replace whitespace with underscores
+        sanitized = re.sub(r'\s+', '_', sanitized)
+        # Limit length
+        if len(sanitized) > 100:
+            sanitized = sanitized[:100]
+        return sanitized or 'unnamed'
+
+    def _get_unique_dir_name(self, name: str) -> str:
+        """Get a unique directory name for the character."""
+        base_name = self._sanitize_name(name)
+        dir_name = base_name
+        counter = 1
+
+        while (self.characters_dir / dir_name).exists():
+            dir_name = f"{base_name}_{counter}"
+            counter += 1
+
+        return dir_name
 
     def create_character(self, name: str, prompt: str) -> UserCharacter:
         """Create a new character with prompt.md file."""
@@ -40,20 +61,21 @@ class CharacterStorageService:
         if not prompt or not prompt.strip():
             raise ValueError("Character prompt cannot be empty")
 
-        # Generate UUID as character_id
-        character_id = str(uuid.uuid4())
+        # Use sanitized name as character_id and directory name
+        character_id = self._get_unique_dir_name(name.strip())
 
         # Create character directory
         character_dir = self.characters_dir / character_id
         character_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create prompt.md with name as heading
+        # Create prompt.md with original name as heading
         prompt_content = f"# {name.strip()}\n\n{prompt.strip()}"
         prompt_file = character_dir / "prompt.md"
         prompt_file.write_text(prompt_content, encoding='utf-8')
 
         # Create subdirectories
         (character_dir / "daily").mkdir(exist_ok=True)
+        (character_dir / "topics").mkdir(exist_ok=True)
 
         logger.info(f"Created character: {character_id}")
 
@@ -73,8 +95,6 @@ class CharacterStorageService:
 
             try:
                 character_id = character_dir.name
-                # Validate it's a UUID
-                uuid.UUID(character_id)
 
                 prompt_file = character_dir / "prompt.md"
                 if not prompt_file.exists():
@@ -99,20 +119,14 @@ class CharacterStorageService:
                     name=name,
                     created_at=created_at
                 ))
-            except (ValueError, OSError):
-                # Not a valid UUID directory, skip
+            except OSError:
                 continue
 
         characters.sort(key=lambda c: c.created_at, reverse=True)
         return characters
 
     def get_character(self, character_id: str) -> Optional[UserCharacter]:
-        """Get a character by ID."""
-        try:
-            uuid.UUID(character_id)
-        except ValueError:
-            return None
-
+        """Get a character by ID (character name)."""
         character_dir = self.characters_dir / character_id
         if not character_dir.exists():
             return None
@@ -142,11 +156,6 @@ class CharacterStorageService:
 
     def delete_character(self, character_id: str) -> bool:
         """Delete a character."""
-        try:
-            uuid.UUID(character_id)
-        except ValueError:
-            return False
-
         character_dir = self.characters_dir / character_id
         try:
             if character_dir.exists():
@@ -162,11 +171,6 @@ class CharacterStorageService:
         """Update a character's prompt."""
         if not prompt or not prompt.strip():
             raise ValueError("Character prompt cannot be empty")
-
-        try:
-            uuid.UUID(character_id)
-        except ValueError:
-            return False
 
         character_dir = self.characters_dir / character_id
         prompt_file = character_dir / "prompt.md"
@@ -193,15 +197,10 @@ class CharacterStorageService:
 
     def get_prompt(self, character_id: str) -> Optional[str]:
         """Get a character's prompt (without the name heading)."""
-        try:
-            uuid.UUID(character_id)
-        except ValueError:
-            return None
-
         character_dir = self.characters_dir / character_id
         prompt_file = character_dir / "prompt.md"
 
-        if not prompt_file.exists():
+        if not character_dir.exists():
             return None
 
         try:
@@ -229,11 +228,10 @@ class CharacterStorageService:
 
     def get_character_dir(self, character_id: str) -> Optional[Path]:
         """Get the directory path for a character."""
-        try:
-            uuid.UUID(character_id)
-        except ValueError:
-            return None
-        return self.characters_dir / character_id
+        character_dir = self.characters_dir / character_id
+        if character_dir.exists():
+            return character_dir
+        return None
 
     def get_daily_dir(self, character_id: str) -> Optional[Path]:
         """Get the daily diary directory for a character."""
@@ -241,4 +239,3 @@ class CharacterStorageService:
         if not character_dir:
             return None
         return character_dir / "daily"
-

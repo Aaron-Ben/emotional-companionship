@@ -19,7 +19,7 @@ for env_path in env_paths:
         break
 
 from app.api.v1 import character, chat, diary, chat_history
-from app.services.character_storage_service import CharacterStorageService
+from app.services.character_service import CharacterStorageService
 from app.models.database import init_db
 from app.utils.file_logger import DailyFileHandler, LOGS_DIR
 

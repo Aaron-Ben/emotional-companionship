@@ -8,7 +8,7 @@ import logging
 import os
 
 from app.services.llm import LLM
-from app.services.character_storage_service import CharacterStorageService
+from app.services.character_service import CharacterService
 from app.services.chat_service import ChatService
 from app.services.chat_history_service import ChatHistoryService
 from app.models.character import UserCharacterPreference
@@ -26,9 +26,9 @@ logger = logging.getLogger(__name__)
 from app.api.v1.character import _user_preferences_store
 
 
-def get_character_service() -> CharacterStorageService:
-    """Dependency injection for CharacterStorageService."""
-    return CharacterStorageService()
+def get_character_service() -> CharacterService:
+    """Dependency injection for CharacterService."""
+    return CharacterService()
 
 
 def get_llm_service() -> LLM:
@@ -70,7 +70,7 @@ def get_user_preferences(
 async def chat(
     request: ChatRequest,
     user_id: str = Depends(get_mock_user_id),
-    character_service: CharacterStorageService = Depends(get_character_service),
+    character_service: CharacterService = Depends(get_character_service),
     llm: LLM = Depends(get_llm_service),
     history_service: ChatHistoryService = Depends(get_chat_history_service)
 ):
@@ -180,7 +180,7 @@ async def chat(
 async def chat_stream(
     request: ChatRequest,
     user_id: str = Depends(get_mock_user_id),
-    character_service: CharacterStorageService = Depends(get_character_service),
+    character_service: CharacterService = Depends(get_character_service),
     llm: LLM = Depends(get_llm_service),
     history_service: ChatHistoryService = Depends(get_chat_history_service)
 ):

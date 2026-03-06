@@ -31,3 +31,4 @@ backend/.env
 backend/app/services/diaries
 
 /data
+/VectorStore
