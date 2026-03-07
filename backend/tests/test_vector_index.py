@@ -1,6 +1,6 @@
 """测试 VectorIndex.process_diary_file 方法
 
-这个脚本测试如何为角色的日记文件建立向量索引。
+这个脚本测试如何为日记文件建立向量索引。
 """
 
 import asyncio
@@ -37,19 +37,19 @@ async def test_process_diary_file():
     print("✅ VectorIndex 实例创建完成\n")
 
     # 测试参数
-    character_id = "严肃的老师"
+    name = "严肃的老师"
     file_path = "2026-03-06-14_32_18.txt"
 
     print("=" * 60)
     print(f"测试参数:")
-    print(f"  角色ID: {character_id}")
+    print(f"  日记名称: {name}")
     print(f"  日记文件: {file_path}")
     print("=" * 60)
     print()
 
     # 执行处理
     print("开始处理日记文件...")
-    result = await vector_index.process_diary_file(character_id, file_path)
+    result = await vector_index.process_diary_file(name, file_path)
 
     # 显示结果
     print()
@@ -74,11 +74,6 @@ async def test_process_diary_file():
 
     print("=" * 60)
     print()
-
-    # 查询数据库确认
-    print("=" * 60)
-    print("验证数据库存储:")
-    print("=" * 60)
 
     db = SessionLocal()
     try:
@@ -139,7 +134,7 @@ async def test_process_diary_file():
 
 
 async def test_sync_all_diaries():
-    """测试同步角色的所有日记"""
+    """测试同步所有日记"""
 
     print("=" * 60)
     print("批量同步日记测试")
@@ -154,10 +149,10 @@ async def test_sync_all_diaries():
     vector_index = VectorIndex(config)
 
     # 同步所有日记
-    character_id = "严肃的老师"
+    name = "严肃的老师"
 
-    print(f"同步角色 '{character_id}' 的所有日记...")
-    result = await vector_index.sync_character_diaries(character_id)
+    print(f"同步日记 '{name}' 的所有日记...")
+    result = await vector_index.sync_character_diaries(name)
 
     print()
     print("=" * 60)

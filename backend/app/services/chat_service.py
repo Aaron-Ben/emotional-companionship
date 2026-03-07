@@ -204,8 +204,11 @@ class ChatService:
             character = self.character_service.get_character(character_id)
             character_name = character.name if character else character_id
 
+            logger.info(f"[Tool Call] character_id={character_id}, character_name={character_name}")
+
             for tc in tool_calls:
                 if tc.args:
+                    logger.info(f"[Tool Call] Before replacement: {tc.name} args={tc.args}")
                     for key, value in tc.args.items():
                         if isinstance(value, str):
                             value = value.replace("{CHARACTER_ID}", character_id)
@@ -213,6 +216,7 @@ class ChatService:
                             value = value.replace("{TODAY}", today)
                             value = value.replace("{CURRENT_TIME}", current_time)
                             tc.args[key] = value
+                    logger.info(f"[Tool Call] After replacement: {tc.name} args={tc.args}")
 
             # Execute tools
             if self.tool_executor:

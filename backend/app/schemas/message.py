@@ -23,19 +23,6 @@ class ChatRequest(BaseModel):
     )
     stream: bool = Field(default=False, description="Whether to stream the response")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "message": "我回来了",
-                "character_id": "550e8400-e29b-41d4-a716-446655440000",
-                "conversation_history": [
-                    {"role": "user", "content": "我出门了"},
-                    {"role": "assistant", "content": "哥哥路上小心～"}
-                ],
-                "stream": False
-            }
-        }
-
 
 class ChatResponse(BaseModel):
     """Response from character chat."""
@@ -44,14 +31,6 @@ class ChatResponse(BaseModel):
     topic_id: Optional[int] = Field(None, description="Topic ID for the conversation")
     context_used: Optional[MessageContext] = Field(None, description="Context information used")
     timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "message": "哥哥回来啦！今天过得怎么样呀？我等你等好久呢～",
-                "character_id": "550e8400-e29b-41d4-a716-446655440000"
-            }
-        }
 
 
 class StreamChatResponse(BaseModel):

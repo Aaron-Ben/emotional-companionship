@@ -1,15 +1,19 @@
 """Diary API endpoints for managing character diary entries.
 
-Diaries are stored in data/characters/{character_id}/daily/
+Diaries are stored in data/daily/{name}/
 """
 
+import logging
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel, Field
 
 from app.services.diary.file_service import DiaryFileService
 from app.models.diary import DiaryEntry
 from plugins.plugin import plugin_manager
+
+
+logger = logging.getLogger(__name__)
 
 
 # Create router
@@ -100,11 +104,11 @@ async def sync_diary_files(
     character_id: str,
     diary_service: DiaryFileService = Depends(get_diary_file_service)
 ):
-    """同步指定角色的日记文件到数据库"""
+    """同步指定角色的日记文件元数据到数据库"""
     try:
-        result = diary_service.sync_character_diaries(character_id)
+        result = diary_service.update_file_metadata(character_id)
         return {
-            "message": "文件同步完成",
+            "message": "文件元数据同步完成",
             "character_id": character_id,
             "added": result["added"],
             "updated": result["updated"],
@@ -123,7 +127,7 @@ async def get_diary_by_path(
     根据路径获取日记详情
 
     Path Parameters:
-    - path: 文件相对路径 (例如: {uuid}/daily/2025-01-23-14_30_52.txt)
+    - path: 文件相对路径 (例如: {name}/2025-01-23-14_30_52.txt)
     """
     try:
         diary = diary_service.read_diary(path)
@@ -139,6 +143,7 @@ async def get_diary_by_path(
 @router.post("/create")
 async def create_diary(
     request: CreateDiaryRequest,
+    background_tasks: BackgroundTasks,
     diary_service: DiaryFileService = Depends(get_diary_file_service)
 ):
     """
@@ -173,6 +178,9 @@ async def create_diary(
             diary_path = result.get("path")
             diary = diary_service.read_diary(diary_path)
             if diary:
+                # 添加后台任务：自动同步角色的日记到向量索引
+                background_tasks.add_task(_trigger_vector_sync)
+
                 return {
                     "message": result.get("message", "日记创建成功"),
                     "diary": DiaryEntry(**diary)
@@ -201,6 +209,7 @@ async def create_diary(
 @router.post("/ai-update")
 async def ai_update_diary(
     request: AIUpdateDiaryRequest,
+    background_tasks: BackgroundTasks,
     diary_service: DiaryFileService = Depends(get_diary_file_service)
 ):
     """
@@ -235,6 +244,10 @@ async def ai_update_diary(
             diary_path = result.get("path")
             diary = diary_service.read_diary(diary_path)
             if diary:
+                # 添加后台任务：自动同步角色的日记到向量索引
+                if request.character_id:
+                    background_tasks.add_task(_trigger_vector_sync)
+
                 return {
                     "message": result.get("message", "日记更新成功"),
                     "path": diary_path,
@@ -289,3 +302,19 @@ async def delete_diary(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"删除日记失败: {str(e)}")
+
+
+# ==================== Helper Functions ====================
+
+async def _trigger_vector_sync():
+    """
+    后台任务：触发向量索引同步（调用统一同步服务）
+    """
+    from app.vector_index import sync_all_diaries_to_vector_index
+
+    logger.info("[Diary API] 🚀 触发向量索引同步（后台任务）")
+    try:
+        result = await sync_all_diaries_to_vector_index()
+        logger.info(f"[Diary API] ✅ 向量索引同步完成: {result}")
+    except Exception as e:
+        logger.error(f"[Diary API] ❌ 向量索引同步失败: {e}", exc_info=True)

@@ -1,35 +1,40 @@
 """Character storage service for file system based character management.
 
 Characters are stored as:
-- data/characters/{character_name}/prompt.md - Character system prompt
-- data/characters/{character_name}/daily/ - Diary files
-
-The character_id IS the character_name - no separate mapping needed.
+- data/characters/{uuid}/prompt.md - Character system prompt
+- data/characters/{uuid}/topics/ - Conversation topics
+- data/characters/{uuid}/.character_meta.json - Metadata (name, created_at, updated_at)
+- data/daily/{name}/ - Diary files (global directory organized by name)
 """
 
+import json
 import logging
 import re
 import shutil
+import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 
-from app.models.character import UserCharacter
+from app.models.character import Character
 
 
 logger = logging.getLogger(__name__)
 
 
-# Default characters directory
+# Default directories
 DEFAULT_CHARACTERS_DIR = Path(__file__).parent.parent.parent.parent / "data" / "characters"
+DEFAULT_DAILY_DIR = Path(__file__).parent.parent.parent.parent / "data" / "daily"
 
 
 class CharacterService:
     """Service for managing characters using file system storage."""
 
-    def __init__(self, characters_dir: Optional[Path] = None):
+    def __init__(self, characters_dir: Optional[Path] = None, daily_dir: Optional[Path] = None):
         self.characters_dir = characters_dir or DEFAULT_CHARACTERS_DIR
         self.characters_dir.mkdir(parents=True, exist_ok=True)
+        self.daily_dir = daily_dir or DEFAULT_DAILY_DIR
+        self.daily_dir.mkdir(parents=True, exist_ok=True)
 
     def _sanitize_name(self, name: str) -> str:
         """Sanitize character name for use as directory name."""
@@ -42,27 +47,15 @@ class CharacterService:
             sanitized = sanitized[:100]
         return sanitized or 'unnamed'
 
-    def _get_unique_dir_name(self, name: str) -> str:
-        """Get a unique directory name for the character."""
-        base_name = self._sanitize_name(name)
-        dir_name = base_name
-        counter = 1
-
-        while (self.characters_dir / dir_name).exists():
-            dir_name = f"{base_name}_{counter}"
-            counter += 1
-
-        return dir_name
-
-    def create_character(self, name: str, prompt: str) -> UserCharacter:
-        """Create a new character with prompt.md file."""
+    def create_character(self, name: str, prompt: str) -> Character:
+        """Create a new character with UUID directory and metadata file."""
         if not name or not name.strip():
             raise ValueError("Character name cannot be empty")
         if not prompt or not prompt.strip():
             raise ValueError("Character prompt cannot be empty")
 
-        # Use sanitized name as character_id and directory name
-        character_id = self._get_unique_dir_name(name.strip())
+        # Generate UUID4 as character_id
+        character_id = str(uuid.uuid4())
 
         # Create character directory
         character_dir = self.characters_dir / character_id
@@ -74,18 +67,49 @@ class CharacterService:
         prompt_file.write_text(prompt_content, encoding='utf-8')
 
         # Create subdirectories
-        (character_dir / "daily").mkdir(exist_ok=True)
         (character_dir / "topics").mkdir(exist_ok=True)
 
-        logger.info(f"Created character: {character_id}")
+        # Create metadata file
+        now = datetime.now().isoformat()
+        metadata = {
+            "character_id": character_id,
+            "name": name.strip(),
+            "created_at": now,
+            "updated_at": now
+        }
+        meta_file = character_dir / ".character_meta.json"
+        meta_file.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding='utf-8')
 
-        return UserCharacter(
+        # Create daily directory (global directory by name)
+        daily_name_dir = self.daily_dir / self._sanitize_name(name.strip())
+        daily_name_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Created character: {character_id} ({name.strip()})")
+
+        return Character(
             character_id=character_id,
             name=name.strip(),
-            created_at=datetime.now().isoformat()
+            created_at=now,
+            updated_at=now
         )
 
-    def list_characters(self) -> List[UserCharacter]:
+    def _load_metadata(self, character_dir: Path) -> Optional[Dict[str, any]]:
+        """Load character metadata from .character_meta.json file."""
+        meta_file = character_dir / ".character_meta.json"
+        if meta_file.exists():
+            try:
+                return json.loads(meta_file.read_text(encoding='utf-8'))
+            except (json.JSONDecodeError, IOError):
+                pass
+        return None
+
+    def _save_metadata(self, character_dir: Path, metadata: Dict[str, any]) -> None:
+        """Save character metadata to .character_meta.json file."""
+        meta_file = character_dir / ".character_meta.json"
+        meta_file.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+    def list_characters(self) -> List[Character]:
         """List all characters."""
         characters = []
 
@@ -100,33 +124,23 @@ class CharacterService:
                 if not prompt_file.exists():
                     continue
 
-                # Get name from prompt.md first line
-                name = character_id
-                try:
-                    first_line = prompt_file.read_text(encoding='utf-8').split('\n')[0]
-                    if first_line.startswith('# '):
-                        name = first_line[2:].strip()
-                    elif first_line.strip():
-                        name = first_line.strip()[:50]
-                except:
-                    pass
-
-                # Get created_at from directory mtime
-                created_at = datetime.fromtimestamp(character_dir.stat().st_ctime).isoformat()
-
-                characters.append(UserCharacter(
-                    character_id=character_id,
-                    name=name,
-                    created_at=created_at
-                ))
+                # Load from metadata file
+                metadata = self._load_metadata(character_dir)
+                if metadata:
+                    characters.append(Character(
+                        character_id=character_id,
+                        name=metadata.get("name", character_id),
+                        created_at=metadata.get("created_at", datetime.fromtimestamp(character_dir.stat().st_ctime).isoformat()),
+                        updated_at=metadata.get("updated_at", metadata.get("created_at", ""))
+                    ))
             except OSError:
                 continue
 
         characters.sort(key=lambda c: c.created_at, reverse=True)
         return characters
 
-    def get_character(self, character_id: str) -> Optional[UserCharacter]:
-        """Get a character by ID (character name)."""
+    def get_character(self, character_id: str) -> Optional[Character]:
+        """Get a character by ID (UUID)."""
         character_dir = self.characters_dir / character_id
         if not character_dir.exists():
             return None
@@ -135,24 +149,25 @@ class CharacterService:
         if not prompt_file.exists():
             return None
 
-        # Get name from prompt.md
-        name = character_id
-        try:
-            first_line = prompt_file.read_text(encoding='utf-8').split('\n')[0]
-            if first_line.startswith('# '):
-                name = first_line[2:].strip()
-            elif first_line.strip():
-                name = first_line.strip()[:50]
-        except:
-            pass
+        # Load from metadata file
+        metadata = self._load_metadata(character_dir)
+        if metadata:
+            return Character(
+                character_id=character_id,
+                name=metadata.get("name", character_id),
+                created_at=metadata.get("created_at", datetime.fromtimestamp(character_dir.stat().st_ctime).isoformat()),
+                updated_at=metadata.get("updated_at", metadata.get("created_at", ""))
+            )
 
-        created_at = datetime.fromtimestamp(character_dir.stat().st_ctime).isoformat()
+        return None
 
-        return UserCharacter(
-            character_id=character_id,
-            name=name,
-            created_at=created_at
-        )
+    def get_character_by_name(self, name: str) -> Optional[Character]:
+        """Get a character by display name."""
+        sanitized = self._sanitize_name(name)
+        for character in self.list_characters():
+            if self._sanitize_name(character.name) == sanitized:
+                return character
+        return None
 
     def delete_character(self, character_id: str) -> bool:
         """Delete a character."""
@@ -168,7 +183,7 @@ class CharacterService:
             return False
 
     def update_prompt(self, character_id: str, prompt: str) -> bool:
-        """Update a character's prompt."""
+        """Update a character's prompt and update timestamp."""
         if not prompt or not prompt.strip():
             raise ValueError("Character prompt cannot be empty")
 
@@ -179,6 +194,9 @@ class CharacterService:
             return False
 
         try:
+            # Get character name from metadata
+            metadata = self._load_metadata(character_dir)
+
             # Preserve the name heading, replace the rest
             current_content = prompt_file.read_text(encoding='utf-8')
             lines = current_content.split('\n')
@@ -189,6 +207,12 @@ class CharacterService:
                 new_content = f"{name_heading}\n\n{new_content}"
 
             prompt_file.write_text(new_content, encoding='utf-8')
+
+            # Update metadata timestamp
+            if metadata:
+                metadata["updated_at"] = datetime.now().isoformat()
+                self._save_metadata(character_dir, metadata)
+
             logger.info(f"Updated prompt for character: {character_id}")
             return True
         except Exception as e:
@@ -234,8 +258,11 @@ class CharacterService:
         return None
 
     def get_daily_dir(self, character_id: str) -> Optional[Path]:
-        """Get the daily diary directory for a character."""
-        character_dir = self.get_character_dir(character_id)
-        if not character_dir:
+        """Get the daily diary directory for a character (global data/daily/{name}/)."""
+        character = self.get_character(character_id)
+        if not character:
             return None
-        return character_dir / "daily"
+        return self.daily_dir / self._sanitize_name(character.name)
+
+# Backward compatibility alias
+CharacterStorageService = CharacterService

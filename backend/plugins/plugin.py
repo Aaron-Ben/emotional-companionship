@@ -384,18 +384,16 @@ class PluginManager:
             plugin_name = manifest["name"]
 
             for cmd in invocation_commands:
-                cmd_name = cmd.get("command", "")
-                # 如果命令名包含 "."，说明是子命令，需要注册别名
-                if "." in cmd_name:
-                    # 提取子命令部分，例如 "DailyNote.create" -> "create"
-                    subcommand = cmd_name.split(".")[-1]
-                    # 解析 example 中的 command 参数
-                    example = cmd.get("example", "")
+                # 读取 commandIdentifier 字段（支持旧版 command 字段作为后备）
+                subcommand = cmd.get("commandIdentifier") or cmd.get("command", "")
+                if subcommand:
+                    # 构建完整的工具名，例如 "DailyNote.create"
+                    full_tool_name = f"{plugin_name}.{subcommand}"
                     additional_args = {"command": subcommand}
 
                     # 注册别名映射
-                    self.tool_aliases[cmd_name] = (plugin_name, additional_args)
-                    logger.info(f"[PluginManager] Registered tool alias: '{cmd_name}' -> '{plugin_name}' with command='{subcommand}'")
+                    self.tool_aliases[full_tool_name] = (plugin_name, additional_args)
+                    logger.info(f"[PluginManager] Registered tool alias: '{full_tool_name}' -> '{plugin_name}' with command='{subcommand}'")
 
             print(f"[PluginManager] Loaded: {manifest['displayName']} ({manifest['name']}) - stdio protocol")
             logger.info(f"[PluginManager] Successfully loaded: {manifest['displayName']} ({manifest['name']}) - stdio protocol")
@@ -449,7 +447,14 @@ class PluginManager:
             if invocation_commands:
                 # Build tool description
                 for cmd in invocation_commands:
-                    cmd_name = cmd.get('command', name)
+                    # 读取 commandIdentifier 字段（支持旧版 command 字段作为后备）
+                    subcommand = cmd.get('commandIdentifier') or cmd.get('command')
+                    if subcommand:
+                        # 构建完整的工具名，例如 "DailyNote.create"
+                        cmd_name = f"{name}.{subcommand}"
+                    else:
+                        cmd_name = name
+
                     cmd_desc = cmd.get('description', '')
                     cmd_example = cmd.get('example', '')
 

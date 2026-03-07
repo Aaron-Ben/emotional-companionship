@@ -240,7 +240,7 @@ class VectorIndex:
 
     async def process_diary_file(
         self,
-        character_id: str,
+        name: str,
         file_path: str
     ) -> Dict[str, Any]:
         """
@@ -255,37 +255,43 @@ class VectorIndex:
         6. 创建/更新向量索引
 
         Args:
-            character_id: 角色ID
-            file_path: 日记文件路径（相对于 data/characters/{character_id}/daily/）
+            name: 角色名称
+            file_path: 日记文件路径（相对于 data/characters/{name}/daily/）
 
         Returns:
             处理结果：{file_id, chunk_count, updated, diary_name, skipped}
         """
-        diary_dir = self._get_diary_dir(character_id)
+        diary_dir = self._get_diary_dir(name)
         full_path = diary_dir / file_path
+
+        logging.info(f"[VectorIndex] 📄 开始处理文件: {file_path}")
 
         # 检查文件是否存在
         if not full_path.exists():
-            logging.warning(f"[VectorIndex] File not found: {full_path}")
+            logging.warning(f"[VectorIndex] ❌ 文件不存在: {full_path}")
             return {"error": "file_not_found", "path": str(full_path)}
 
         # 获取角色名称（用于diary_name）
         character_service = CharacterService()
-        character = character_service.get_character(character_id)
+        character = character_service.get_character_by_name(name)
         if not character:
-            logging.error(f"[VectorIndex] Character not found: {character_id}")
-            return {"error": "character_not_found", "character_id": character_id}
+            logging.error(f"[VectorIndex] ❌ 角色不存在: {name}")
+            return {"error": "character_not_found", "name": name}
         diary_name = character.name
 
         try:
             # 1. 读取文件内容
+            logging.debug(f"[VectorIndex] 📖 读取文件内容...")
             content = full_path.read_text(encoding='utf-8')
+            content_length = len(content)
+            logging.debug(f"[VectorIndex] ✅ 文件内容读取成功 ({content_length} 字符)")
 
             # 2. 计算文件元数据
             checksum = self._calculate_checksum(content)
             mtime = int(full_path.stat().st_mtime)
             size = len(content.encode('utf-8'))
             updated_at = int(time.time())
+            logging.debug(f"[VectorIndex] 🔍 校验和: {checksum}, 大小: {size} bytes")
 
             # 3. 检查数据库是否已存在且无需更新
             db: Session = SessionLocal()
@@ -295,30 +301,37 @@ class VectorIndex:
                 ).first()
 
                 if existing_file and existing_file.checksum == checksum:
-                    logging.info(f"[VectorIndex] File unchanged, skipping: {file_path}")
+                    existing_chunks = len(existing_file.chunks)
+                    logging.info(f"[VectorIndex] ⏭️  文件未变化，跳过处理: {file_path} (已有 {existing_chunks} 个分块)")
                     return {
                         "file_id": existing_file.id,
-                        "chunk_count": len(existing_file.chunks),
+                        "chunk_count": existing_chunks,
                         "updated": False,
                         "diary_name": diary_name,
                         "skipped": True
                     }
 
                 # 4. 文本分块
+                logging.debug(f"[VectorIndex] ✂️  开始文本分块...")
                 chunks = chunk_text(content)
                 if not chunks:
-                    logging.warning(f"[VectorIndex] No chunks generated for: {file_path}")
+                    logging.warning(f"[VectorIndex] ⚠️  无法生成文本分块: {file_path}")
                     return {"error": "no_chunks", "path": str(full_path)}
+                logging.debug(f"[VectorIndex] ✅ 生成了 {len(chunks)} 个文本分块")
 
                 # 5. 向量化
+                logging.debug(f"[VectorIndex] 🔄 开始向量化...")
                 vectors = await self._vectorize_chunks(chunks)
                 if not vectors or all(v is None for v in vectors):
-                    logging.error(f"[VectorIndex] All vectorizations failed for: {file_path}")
+                    logging.error(f"[VectorIndex] ❌ 向量化全部失败: {file_path}")
                     return {"error": "vectorization_failed", "path": str(full_path)}
+                success_count = sum(1 for v in vectors if v is not None)
+                logging.debug(f"[VectorIndex] ✅ 向量化完成: {success_count}/{len(chunks)} 成功")
 
                 # 6. 更新或插入数据库
                 if existing_file:
                     # 删除旧的chunks
+                    logging.debug(f"[VectorIndex] 🗑️  删除旧的分块数据...")
                     db.query(ChunkTable).filter(ChunkTable.file_id == existing_file.id).delete()
                     # 更新文件记录
                     existing_file.checksum = checksum
@@ -327,9 +340,10 @@ class VectorIndex:
                     existing_file.updated_at = updated_at
                     file_id = existing_file.id
                     db.flush()
-                    logging.info(f"[VectorIndex] Updating existing file: {file_path}")
+                    logging.info(f"[VectorIndex] 🔄 更新现有文件记录: {file_path}")
                 else:
                     # 创建新文件记录
+                    logging.debug(f"[VectorIndex] ➕ 创建新文件记录...")
                     new_file = DiaryFileTable(
                         path=file_path,
                         diary_name=diary_name,
@@ -341,16 +355,17 @@ class VectorIndex:
                     db.add(new_file)
                     db.flush()
                     file_id = new_file.id
-                    logging.info(f"[VectorIndex] Creating new file record: {file_path}")
+                    logging.info(f"[VectorIndex] ✨ 创建新文件记录: {file_path}")
 
                 # 7. 插入chunks
+                logging.debug(f"[VectorIndex] 💾 插入分块到数据库...")
                 chunk_entries = []
                 vector_tuples = []
                 valid_chunk_count = 0
 
                 for i, (text, vector) in enumerate(zip(chunks, vectors)):
                     if vector is None:
-                        logging.warning(f"[VectorIndex] Vectorization failed for chunk {i}")
+                        logging.warning(f"[VectorIndex] ⚠️  分块 {i} 向量化失败，跳过")
                         continue
 
                     # 存储向量到数据库（JSON格式）
@@ -369,12 +384,14 @@ class VectorIndex:
 
                 db.add_all(chunk_entries)
                 db.commit()
+                logging.debug(f"[VectorIndex] ✅ 已插入 {valid_chunk_count} 个分块到数据库")
 
                 # 8. 创建/更新向量索引
                 if vector_tuples:
+                    logging.debug(f"[VectorIndex] 📊 添加向量到索引...")
                     await self.add_vectors(diary_name, vector_tuples)
                     logging.info(
-                        f"[VectorIndex] Added {valid_chunk_count} vectors to index for: {file_path}"
+                        f"[VectorIndex] ✅ 已添加 {valid_chunk_count} 个向量到索引: {file_path}"
                     )
 
                 return {
@@ -398,18 +415,18 @@ class VectorIndex:
 
     async def sync_character_diaries(
         self,
-        character_id: str
+        name: str
     ) -> Dict[str, Any]:
         """
         同步指定角色的所有日记文件
 
         Args:
-            character_id: 角色ID
+            name: 日记名称
 
         Returns:
             同步结果：{processed, skipped, failed, total_chunks, files}
         """
-        diary_dir = self._get_diary_dir(character_id)
+        diary_dir = self._get_diary_dir(name)
 
         if not diary_dir.exists():
             logging.warning(f"[VectorIndex] Diary directory not found: {diary_dir}")
@@ -423,7 +440,7 @@ class VectorIndex:
 
         # 获取所有.txt文件
         txt_files = sorted(diary_dir.glob("*.txt"))
-        logging.info(f"[VectorIndex] Found {len(txt_files)} diary files for {character_id}")
+        logging.info(f"[VectorIndex] Found {len(txt_files)} diary files for {name}")
 
         results = {
             "processed": 0,
@@ -436,7 +453,7 @@ class VectorIndex:
         # 处理每个文件
         for file_path in txt_files:
             relative_path = file_path.name  # 只保留文件名
-            result = await self.process_diary_file(character_id, relative_path)
+            result = await self.process_diary_file(name, relative_path)
 
             file_result = {
                 "path": relative_path,
@@ -459,7 +476,7 @@ class VectorIndex:
             results["files"].append(file_result)
 
         logging.info(
-            f"[VectorIndex] Sync complete for {character_id}: "
+            f"[VectorIndex] Sync complete for {name}: "
             f"{results['processed']} processed, {results['skipped']} skipped, "
             f"{results['failed']} failed, {results['total_chunks']} total chunks"
         )
@@ -501,13 +518,7 @@ class VectorIndex:
                     logging.warning(f"[VectorIndex] Failed to parse vector for chunk {chunk.id}: {e}")
 
             if vector_tuples:
-                # 获取或加载索引
-                idx = await self._get_or_load_diary_index(diary_name)
-
-                # 清空现有索引（如果需要完全重建）
-                # 这里我们选择追加模式，如果需要重建可以先删除索引文件
-
-                # 批量添加向量
+                # 批量添加向量（会自动触发索引加载）
                 await self.add_vectors(diary_name, vector_tuples)
                 logging.info(f"[VectorIndex] Rebuilt index with {len(vector_tuples)} vectors")
 
@@ -552,21 +563,26 @@ class VectorIndex:
             logging.error(f"[VectorIndex] Vectorization failed: {e}")
             return [None] * len(chunks)
 
-    def _get_diary_dir(self, character_id: str) -> Path:
+    def _get_diary_dir(self, name: str) -> Path:
         """
         获取角色日记目录路径
 
         Args:
-            character_id: 角色ID
+            name: 角色名称
 
         Returns:
-            日记目录路径
+            日记目录路径 (data/daily/{sanitized_name}/)
         """
-        # CharacterService uses a different base path
-        # We need to match it
+        # Sanitize name the same way CharacterService does
+        import re
+        sanitized = re.sub(r'[\\/:*?"<>|]', '', name.strip())
+        sanitized = re.sub(r'\s+', '_', sanitized)
+        sanitized = sanitized[:100] if len(sanitized) > 100 else sanitized
+        sanitized = sanitized or 'unnamed'
+
         current_file = Path(__file__)
         project_root = current_file.parent.parent.parent
-        return project_root / "data" / "characters" / character_id / "daily"
+        return project_root / "data" / "daily" / sanitized
 
     def _calculate_checksum(self, content: str) -> str:
         """
@@ -686,3 +702,123 @@ class VectorIndex:
 
         finally:
             db.close()
+
+
+# ==================== 统一同步服务 ====================
+
+async def sync_all_diaries_to_vector_index() -> Dict[str, int]:
+    """
+    统一的同步服务函数：同步所有角色的日记到向量索引
+
+    可在以下场景调用：
+    - 应用启动时
+    - 创建日记后
+    - 更新日记后
+
+    Returns:
+        统计信息字典：{processed, skipped, failed, total_chunks}
+    """
+    from app.services.character_service import CharacterService
+
+    logger = logging.getLogger(__name__)
+    logger.info("=" * 60)
+    logger.info("🚀 启动向量索引同步任务")
+    logger.info("=" * 60)
+
+    try:
+        # 初始化向量索引
+        config = VectorIndexConfig()
+        vector_index = VectorIndex(config)
+        logger.info("✅ VectorIndex 初始化成功")
+
+        # 获取所有角色
+        character_service = CharacterService()
+        characters = character_service.list_characters()
+
+        if not characters:
+            logger.info("📭 没有找到任何角色")
+            return {"processed": 0, "skipped": 0, "failed": 0, "total_chunks": 0}
+
+        logger.info(f"📚 找到 {len(characters)} 个角色，开始同步日记...")
+
+        # 统计信息
+        total_stats = {
+            "processed": 0,
+            "skipped": 0,
+            "failed": 0,
+            "total_chunks": 0
+        }
+
+        # 逐个同步角色的日记
+        for character in characters:
+            logger.info("-" * 60)
+            logger.info(f"📖 正在处理角色: {character.name} (ID: {character.character_id})")
+
+            result = await vector_index.sync_character_diaries(character.name)
+
+            # 记录详细结果
+            processed = result.get("processed", 0)
+            skipped = result.get("skipped", 0)
+            failed = result.get("failed", 0)
+            total_chunks = result.get("total_chunks", 0)
+            files = result.get("files", [])
+
+            logger.info(f"  ✅ 处理: {processed} 个文件")
+            logger.info(f"  ⏭️  跳过: {skipped} 个文件")
+            logger.info(f"  ❌ 失败: {failed} 个文件")
+            logger.info(f"  📦 总分块: {total_chunks} 个")
+
+            # 记录每个文件的处理详情
+            if files:
+                logger.info("  📄 文件详情:")
+                for file_info in files:
+                    path = file_info.get("path", "unknown")
+                    status = file_info.get("status", "unknown")
+
+                    if status == "processed":
+                        chunks = file_info.get("chunk_count", 0)
+                        logger.info(f"    ✅ {path}: 已处理 ({chunks} 个分块)")
+                    elif status == "skipped":
+                        logger.info(f"    ⏭️  {path}: 已跳过 (内容未变化)")
+                    elif status == "failed":
+                        error = file_info.get("error", "unknown")
+                        logger.warning(f"    ❌ {path}: 处理失败 - {error}")
+
+            # 累计统计
+            total_stats["processed"] += processed
+            total_stats["skipped"] += skipped
+            total_stats["failed"] += failed
+            total_stats["total_chunks"] += total_chunks
+
+        # 保存所有索引到磁盘
+        logger.info("-" * 60)
+        await vector_index.flush_all()
+        logger.info("💾 所有索引已保存到磁盘")
+
+        # 输出总体统计
+        logger.info("=" * 60)
+        logger.info("📊 向量索引同步完成 - 总体统计")
+        logger.info("=" * 60)
+        logger.info(f"  处理文件: {total_stats['processed']}")
+        logger.info(f"  跳过文件: {total_stats['skipped']}")
+        logger.info(f"  失败文件: {total_stats['failed']}")
+        logger.info(f"  总分块数: {total_stats['total_chunks']}")
+        logger.info("=" * 60)
+
+        # 显示索引统计
+        stats = vector_index.stats()
+        if stats:
+            logger.info("📈 索引统计详情:")
+            for diary_name, stat in stats.items():
+                logger.info(f"  📖 {diary_name}:")
+                logger.info(f"    向量数: {stat['totalVectors']}")
+                logger.info(f"    维度: {stat['dimensions']}")
+                logger.info(f"    容量: {stat['capacity']}")
+                logger.info(f"    内存使用: {stat['memoryUsage']} bytes")
+
+        return total_stats
+
+    except Exception as e:
+        logger.error(f"❌ 向量索引同步失败: {e}", exc_info=True)
+        logger.error("请检查向量索引配置和数据库连接")
+        return {"processed": 0, "skipped": 0, "failed": 0, "total_chunks": 0}

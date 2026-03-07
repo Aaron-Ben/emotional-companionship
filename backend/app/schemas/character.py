@@ -3,7 +3,7 @@
 from typing import List
 from pydantic import BaseModel, Field
 
-from app.models.character import UserCharacter
+from app.models.character import Character
 
 
 class CreateCharacterRequest(BaseModel):
@@ -17,12 +17,17 @@ class UpdateCharacterPromptRequest(BaseModel):
     prompt: str = Field(..., min_length=1, description="New system prompt")
 
 
-class UserCharacterListResponse(BaseModel):
+class CharacterListResponse(BaseModel):
     """Response with list of user characters."""
-    characters: List[UserCharacter]
+    characters: List[Character]
     count: int
 
 
-class UserCharacterResponse(BaseModel):
+class CharacterResponse(BaseModel):
     """Response with a single user character."""
-    character: UserCharacter
+    character: Character
+
+
+# Backward compatibility aliases
+UserCharacterListResponse = CharacterListResponse
+UserCharacterResponse = CharacterResponse

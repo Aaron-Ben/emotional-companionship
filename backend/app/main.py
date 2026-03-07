@@ -23,31 +23,35 @@ from app.services.character_service import CharacterStorageService
 from app.models.database import init_db
 from app.utils.file_logger import DailyFileHandler, LOGS_DIR
 
-# Configure logging with detailed format
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+# Configure logging for both application and uvicorn
+# Setup root logger to ensure uvicorn access logs work
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+
+# Console handler for all logs (including uvicorn access logs)
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+root_logger.addHandler(console_handler)
 
 # Create shared file handler for all tool-related logs
 file_handler = DailyFileHandler()
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
 
 # Add file handler to loggers
-for logger_name in ["app.services.chat_service", "plugins.tool_executor", "plugins.plugin", "plugins.tool_call_parser", "app.api.v1.chat", "app.api.v1.diary"]:
+for logger_name in ["app.services.chat_service", "plugins.tool_executor", "plugins.plugin", "plugins.tool_call_parser", "app.api.v1.chat", "app.api.v1.diary", "app.vector_index"]:
     logging.getLogger(logger_name).addHandler(file_handler)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
+    logger = logging.getLogger(__name__)
+
     # 启动时初始化
     init_db()
     print("Database initialized successfully")
 
     # 检查 Genie-TTS 资源目录
-    import os
     from pathlib import Path
     from app.characters.tts import GENIE_DATA_DIR, load_predefined_character
 
@@ -76,6 +80,14 @@ async def lifespan(app: FastAPI):
     from app.utils.file_logger import LOGS_DIR
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     print(f"File logging enabled: {LOGS_DIR}/today.txt")
+
+    # 启动时自动同步所有角色的日记到向量索引
+    try:
+        from app.vector_index import sync_all_diaries_to_vector_index
+        logger.info("🚀 启动时自动同步向量索引...")
+        await sync_all_diaries_to_vector_index()
+    except Exception as e:
+        logger.error(f"❌ 启动时向量索引同步失败: {e}", exc_info=True)
 
     yield
     # 关闭时的清理工作（如果需要）

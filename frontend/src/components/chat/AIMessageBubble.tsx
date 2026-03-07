@@ -16,6 +16,10 @@ export interface AIMessageBubbleProps {
   timestamp?: Date;
   /** 自定义类名 */
   className?: string;
+  /** 角色 ID（可选，用于替换工具调用中的占位符） */
+  characterId?: string;
+  /** 角色名称（可选，用于替换工具调用中的占位符） */
+  characterName?: string;
 }
 
 /**
@@ -41,7 +45,7 @@ const formatMessageTime = (date: Date) => {
 /**
  * 工具请求可折叠组件
  */
-const ToolRequestCollapsible: React.FC<{ content: string }> = ({ content }) => {
+const ToolRequestCollapsible: React.FC<{ content: string; characterId?: string; characterName?: string }> = ({ content, characterId, characterName }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   // 解析工具请求内容
@@ -54,7 +58,15 @@ const ToolRequestCollapsible: React.FC<{ content: string }> = ({ content }) => {
       matches.forEach((match) => {
         const [, key, value] = match.match(/(\w+):「始」([\s\S]+?)「末」/) || [];
         if (key && value) {
-          params[key] = value;
+          // 替换占位符为实际值
+          let processedValue = value;
+          if (characterId) processedValue = processedValue.replace(/\{CHARACTER_ID\}/g, characterId);
+          if (characterName) processedValue = processedValue.replace(/\{CHARACTER_NAME\}/g, characterName);
+          // 替换日期占位符
+          processedValue = processedValue.replace(/\{TODAY\}/g, new Date().toISOString().split('T')[0]);
+          processedValue = processedValue.replace(/\{CURRENT_TIME\}/g, new Date().toTimeString().slice(0, 5));
+
+          params[key] = processedValue;
         }
       });
     }

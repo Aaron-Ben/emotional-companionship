@@ -1,11 +1,11 @@
 /** Diary service for managing character diary entries
 
-Diaries are stored in data/characters/{character_id}/daily/
+Diaries are stored in data/daily/{name}/
 */
 
 export interface DiaryEntry {
-  path: string;           // 文件相对路径，例如 "{uuid}/daily/2025-01-23-14_30_52.txt"
-  character_id: string;   // 角色 ID
+  path: string;           // 文件相对路径，例如 "{name}/2025-01-23-14_30_52.txt"
+  character_id: string;   // 角色 ID (UUID)
   content: string;        // 日记内容（包含末尾的 Tag 行）
   mtime: number;          // 文件修改时间戳
 }
@@ -56,7 +56,7 @@ export async function getLatestDiary(characterId: string): Promise<DiaryEntry | 
 
 /**
  * 根据路径获取日记详情
- * @param path - 文件相对路径，例如 "{uuid}/daily/2025-01-23-14_30_52.txt"
+ * @param path - 文件相对路径，例如 "{name}/2025-01-23-14_30_52.txt"
  */
 export async function getDiaryByPath(path: string): Promise<DiaryEntry> {
   const response = await fetch(`${API_BASE}/api/v1/diary/${path}`);
@@ -157,7 +157,7 @@ export async function listDiaryNames(): Promise<{ names: string[] }> {
 
 /**
  * 从文件路径提取日期
- * @param path - 文件路径，例如 "{uuid}/daily/2025-01-23-14_30_52.txt"
+ * @param path - 文件路径，例如 "{name}/2025-01-23-14_30_52.txt"
  */
 export function extractDateFromPath(path: string): Date {
   const filename = path.split('/').pop() || '';

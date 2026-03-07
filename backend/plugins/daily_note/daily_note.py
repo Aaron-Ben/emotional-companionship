@@ -16,11 +16,9 @@ from datetime import datetime
 
 
 # --- Configuration ---
-# 默认角色目录
+# 默认角色目录和日记目录
 DEFAULT_CHARACTERS_DIR = Path(__file__).parent.parent.parent.parent / "data" / "characters"
-
-# 忽略的文件夹列表
-IGNORED_FOLDERS = ['MusicDiary']
+DEFAULT_DAILY_DIR = Path(__file__).parent.parent.parent.parent / "data" / "daily"
 
 
 def get_characters_dir() -> Path:
@@ -29,6 +27,25 @@ def get_characters_dir() -> Path:
     if path_str:
         return Path(path_str)
     return DEFAULT_CHARACTERS_DIR
+
+
+def get_daily_dir() -> Path:
+    """获取全局日记目录"""
+    return DEFAULT_DAILY_DIR
+
+
+def get_character_metadata(character_id: str, characters_dir: Path) -> dict:
+    """根据 character_id (UUID) 获取角色元数据"""
+    character_dir = characters_dir / character_id
+    meta_file = character_dir / ".character_meta.json"
+
+    if meta_file.exists():
+        try:
+            return json.loads(meta_file.read_text(encoding='utf-8'))
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    return None
 
 
 def sanitize_path_component(name):
@@ -149,37 +166,46 @@ def handle_create(args):
         time_string = now.strftime("%H_%M_%S")
 
         characters_dir = get_characters_dir()
-        daily_dir = characters_dir / character_id / "daily"
+        daily_dir = get_daily_dir()
+
+        # 从 .character_meta.json 获取角色名称
+        character_meta = get_character_metadata(character_id, characters_dir)
+        character_name = character_meta.get("name", character_id)
+
+        sanitized_name = sanitize_path_component(character_name)
+
+        # 日记目录: data/daily/{name}/
+        name_daily_dir = daily_dir / sanitized_name
 
         # 安全检查
-        if not is_path_within_base(daily_dir, characters_dir):
+        if not is_path_within_base(name_daily_dir, daily_dir):
             return {
                 "status": "error",
                 "error": "Security error: Invalid folder path detected."
             }
 
         # 创建目录
-        daily_dir.mkdir(parents=True, exist_ok=True)
+        name_daily_dir.mkdir(parents=True, exist_ok=True)
 
         # 生成文件名
         base_file_name = f"{date_part}-{time_string}"
         file_extension = ".txt"
         final_file_name = f"{base_file_name}{file_extension}"
-        file_path = daily_dir / final_file_name
+        file_path = name_daily_dir / final_file_name
         counter = 1
 
         # 循环检查文件名冲突
         while file_path.exists():
             counter += 1
             final_file_name = f"{base_file_name}({counter}){file_extension}"
-            file_path = daily_dir / final_file_name
+            file_path = name_daily_dir / final_file_name
 
         # 写入文件
-        file_content = f"[{date_part}] - {actual_maid_name}\n{processed_content}"
+        file_content = f"[{date_part}] - {character_name}\n{processed_content}"
         file_path.write_text(file_content, encoding='utf-8')
 
-        # 计算相对路径
-        relative_path = file_path.relative_to(characters_dir).as_posix()
+        # 计算相对路径 (格式: {name}/{filename}.txt)
+        relative_path = file_path.relative_to(daily_dir).as_posix()
 
         return {
             "status": "success",
@@ -220,24 +246,25 @@ def handle_update(args):
         }
 
     try:
+        daily_dir = get_daily_dir()
         characters_dir = get_characters_dir()
         modification_done = False
         modified_file_path = None
 
         # 构建搜索顺序
-        priority_dirs = []
-        other_dirs = []
+        priority_names = []
+        other_names = []
 
-        # 获取所有角色目录
-        if not characters_dir.exists():
+        # 获取所有日记目录
+        if not daily_dir.exists():
             return {
                 "status": "error",
-                "error": f"Characters directory not found at {characters_dir}"
+                "error": f"Daily directory not found at {daily_dir}"
             }
 
-        all_character_dirs = [
-            d for d in characters_dir.iterdir()
-            if d.is_dir() and d.name not in IGNORED_FOLDERS
+        all_daily_dirs = [
+            d for d in daily_dir.iterdir()
+            if d.is_dir()
         ]
 
         if maid:
@@ -247,35 +274,39 @@ def handle_update(args):
             if tag_match:
                 character_id = tag_match.group(2).strip()
 
-            # 优先搜索指定的 character_id
-            for dir_entry in all_character_dirs:
-                if dir_entry.name == character_id:
-                    priority_dirs.append(dir_entry)
+            # 获取角色名称
+            character_meta = get_character_metadata(character_id, characters_dir)
+            character_name = character_meta.get("name", character_id)
+            sanitized_name = sanitize_path_component(character_name)
+
+            # 优先搜索指定的角色名称目录
+            for dir_entry in all_daily_dirs:
+                if dir_entry.name == sanitized_name:
+                    priority_names.append(dir_entry)
                 else:
-                    other_dirs.append(dir_entry)
+                    other_names.append(dir_entry)
         else:
             # 搜索所有目录
-            other_dirs = all_character_dirs
+            other_names = all_daily_dirs
 
         # 合并搜索顺序：优先目录在前
-        directories_to_scan = priority_dirs + other_dirs
+        directories_to_scan = priority_names + other_names
 
         if not directories_to_scan:
             return {
                 "status": "error",
-                "error": f"No character directories found in {characters_dir}"
+                "error": f"No diary directories found in {daily_dir}"
             }
 
-        for character_dir in directories_to_scan:
+        for name_daily_dir in directories_to_scan:
             if modification_done:
                 break
 
-            daily_dir = character_dir / "daily"
-            if not daily_dir.exists():
+            if not name_daily_dir.exists():
                 continue
 
             try:
-                files = list(daily_dir.iterdir())
+                files = list(name_daily_dir.iterdir())
                 txt_files = sorted([
                     f for f in files
                     if f.is_file() and f.suffix.lower() == '.txt'
@@ -296,7 +327,7 @@ def handle_update(args):
                         try:
                             file_path.write_text(new_content, encoding='utf-8')
                             modification_done = True
-                            modified_file_path = file_path.relative_to(characters_dir).as_posix()
+                            modified_file_path = file_path.relative_to(daily_dir).as_posix()
                             break
                         except Exception:
                             break

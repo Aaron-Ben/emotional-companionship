@@ -158,7 +158,7 @@ export const TraditionalChatPanel: React.FC<TraditionalChatPanelProps> = ({
               {message.isUser ? (
                 <UserMessageBubble content={message.content} timestamp={message.timestamp} />
               ) : (
-                <AIMessageBubble content={message.content} timestamp={message.timestamp} />
+                <AIMessageBubble content={message.content} timestamp={message.timestamp} characterId={characterId} />
               )}
             </div>
           ))}
