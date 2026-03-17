@@ -54,23 +54,6 @@ async def lifespan(app: FastAPI):
     init_db()
     print("Database initialized successfully")
 
-    # 检查 Genie-TTS 资源目录
-    from pathlib import Path
-    from app.characters.tts import GENIE_DATA_DIR, load_predefined_character
-
-    genie_data_path = Path(GENIE_DATA_DIR) if GENIE_DATA_DIR else None
-    if genie_data_path and genie_data_path.exists():
-        print(f"Genie-TTS data directory found at {genie_data_path}")
-    else:
-        print("Genie-TTS data directory not found, will download on first use")
-
-    # 预加载默认角色
-    try:
-        load_predefined_character("feibi")  # 菲比 - 中文角色
-        print("Genie-TTS character 'feibi' loaded successfully")
-    except Exception as e:
-        print(f"Failed to load Genie-TTS character: {e}")
-
     # ✅ 先初始化 VectorIndex，再加载插件（修复初始化顺序问题）
     from app.vector_index import initialize_vector_index
     from plugins.plugin import plugin_manager
@@ -103,9 +86,6 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ 启动时向量索引同步失败: {e}", exc_info=True)
 
     yield
-    # 关闭时的清理工作（如果需要）
-    from app.characters.tts import cleanup
-    cleanup()
 
     # Close file loggers
     for handler in list(logging.getLogger().handlers):

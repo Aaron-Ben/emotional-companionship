@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { sendMessage, sendMessageStream, getChatStarter } from '../services/chatService';
-import { speakText } from '../services/ttsService';
 import type { DisplayMessage, ChatRequest, Message } from '../types/chat';
 
 const DEFAULT_CHARACTER_ID = 'sister_001';
@@ -204,15 +203,6 @@ export function useChat(options?: UseChatOptions) {
     }
   }, [characterId]);
 
-  // TTS: Play TTS for given text
-  const playTTS = useCallback(async (text: string) => {
-    try {
-      await speakText(text, 'genie', characterId);
-    } catch (err) {
-      console.error('TTS playback failed:', err);
-    }
-  }, [characterId]);
-
   // Set messages directly (used when loading topic history)
   const setMessagesDirect = useCallback((newMessages: DisplayMessage[]) => {
     setMessages(newMessages);
@@ -220,27 +210,6 @@ export function useChat(options?: UseChatOptions) {
 
   // Get current topic ID
   const getCurrentTopicId = useCallback(() => topicId, [topicId]);
-
-  // TTS auto-play state
-  const [autoPlayTTS, setAutoPlayTTS] = useState(() => {
-    // Load from localStorage
-    try {
-      const stored = localStorage.getItem('autoplay_tts');
-      return stored === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  // Toggle auto-play TTS
-  const toggleAutoPlayTTS = useCallback((enabled: boolean) => {
-    setAutoPlayTTS(enabled);
-    try {
-      localStorage.setItem('autoplay_tts', String(enabled));
-    } catch (err) {
-      console.error('Failed to save TTS preference:', err);
-    }
-  }, []);
 
   return {
     messages,
@@ -251,10 +220,6 @@ export function useChat(options?: UseChatOptions) {
     sendStream,
     clearHistory,
     getStarter,
-    // TTS
-    autoPlayTTS,
-    toggleAutoPlayTTS,
-    playTTS,
     // Topic support
     setMessages: setMessagesDirect,
     getCurrentTopicId,

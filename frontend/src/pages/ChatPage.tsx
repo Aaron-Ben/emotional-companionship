@@ -39,14 +39,6 @@ export const ChatPage: React.FC = () => {
     localStorage.setItem('selectedCharacterId', characterId);
   }, []);
 
-  const handleVoiceInputStart = useCallback(() => {
-    // Voice input start handling
-  }, []);
-
-  const handleVoiceInputEnd = useCallback(() => {
-    // Voice input end handling
-  }, []);
-
   // Topic management
   const {
     topics,
@@ -68,8 +60,6 @@ export const ChatPage: React.FC = () => {
     streamingMessage,
     sendStream,
     clearHistory,
-    autoPlayTTS,
-    toggleAutoPlayTTS,
     setMessages: setChatMessages,
   } = useChat({
     characterId: selectedCharacterId,
@@ -220,8 +210,6 @@ export const ChatPage: React.FC = () => {
           loading={loading}
           streamingMessage={streamingMessage}
           onSendMessage={handleSendMessage}
-          onVoiceInputStart={handleVoiceInputStart}
-          onVoiceInputEnd={handleVoiceInputEnd}
           placeholder="聊聊天吧～"
           characterId={selectedCharacterId}
           characterName={character?.name}
@@ -229,24 +217,6 @@ export const ChatPage: React.FC = () => {
 
         {/* 右下角快捷操作区 - 垂直排列 */}
         <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 items-end">
-          {/* TTS 语音开关 */}
-          <button
-            onClick={() => toggleAutoPlayTTS(!autoPlayTTS)}
-            className={clsx(
-              "flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-semibold cursor-pointer transition-all duration-300 border-2 shadow-lg hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0 active:scale-95 group",
-              autoPlayTTS
-                ? "bg-gradient-to-r from-rose-400 via-rose-500 to-pink-500 border-rose-300 text-white shadow-rose-soft hover:shadow-rose-soft-lg"
-                : "bg-white/90 dark:bg-neutral-800/90 backdrop-blur-sm border-neutral-200 dark:border-neutral-600 text-neutral-700 dark:text-neutral-200 hover:border-rose-300 dark:hover:border-rose-700"
-            )}
-            title={autoPlayTTS ? '关闭自动播放' : '开启自动播放'}
-            type="button"
-          >
-            <span className={clsx("text-base transition-transform duration-300", autoPlayTTS && "group-hover:scale-110")}>🔊</span>
-            <span className="text-[13px] font-semibold">
-              {autoPlayTTS ? '语音开启' : '语音'}
-            </span>
-          </button>
-
           {/* 日记按钮 */}
           <button
             onClick={() => setShowDiaries(true)}

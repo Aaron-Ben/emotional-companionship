@@ -54,40 +54,6 @@ export interface ConversationHistory {
   lastUpdated: Date;
 }
 
-// Voice input types
-export interface VoiceInputOptions {
-  characterId?: string;
-}
-
-export interface VoiceRecognitionResult {
-  text: string;
-  emotion?: string;
-  event?: string;
-  success: boolean;
-  error?: string;
-}
-
-export interface VoiceChatOptions extends VoiceInputOptions {
-  conversationHistory?: Message[];
-  stream?: boolean;
-}
-
-export type RecordingState = 'idle' | 'recording' | 'processing';
-
-// TTS types
-export interface TTSRequest {
-  text: string;
-  engine?: 'genie';
-  character_id?: string;
-}
-
-export interface TTSResponse {
-  success: boolean;
-  audio_path?: string;
-  error?: string;
-  engine: string;
-}
-
 // Topic types for chat history management
 export interface Topic {
   topic_id: number;

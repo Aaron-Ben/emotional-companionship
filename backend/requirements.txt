@@ -30,9 +30,6 @@ aiofiles>=23.0.0  # 异步文件操作
 numpy>=1.24.0  # 向量运算
 scipy>=1.10.0  # 高级数学运算 (SVD, K-Means, PCA)
 
-# TTS (文本转语音) - Genie-TTS (GPT-SoVITS)
-genie-tts>=0.1.0
-
 # 测试
 pytest>=7.4.0
 pytest-mock>=3.12.0

@@ -6,8 +6,6 @@
 
 ### 💬 智能对话
 - **流式响应**：实时交互体验
-- **语音输入**：支持中英日韩粤语识别
-- **语音合成**：TTS 语音输出
 - **对话历史**：自动保存和恢复对话上下文
 
 ### 🎭 角色定制
@@ -84,8 +82,6 @@
 - **LLM & Embedding**: OpenRouter (支持 BGE-M3 等模型)
 - **向量索引**: VexusIndex (自研向量数据库)
 - **插件系统**: 自定义插件管理器，支持 stdio/direct 协议
-- **语音识别**: Sherpa-ONNX SenseVoice
-- **语音合成**: Genie-TTS (GPT-SoVITS)
 - **Python**: 3.13+
 
 ### 前端
@@ -124,8 +120,6 @@ emotional-companionship/
 │   │   │   ├── file_logger.py         # 文件日志记录
 │   │   │   └── json.py               # JSON 工具
 │   │   ├── characters/       # 角色模块
-│   │   │   ├── asr.py          # 语音识别
-│   │   │   └── tts.py          # 语音合成
 │   │   └── vector_index.py  # 向量索引系统
 │   ├── plugins/           # 插件系统
 │   │   ├── plugin.py              # 插件管理器
@@ -235,9 +229,6 @@ make dev
 #### 对话
 - `POST /api/v1/chat/` - 发送消息
 - `POST /api/v1/chat/stream` - SSE 流式对话
-- `POST /api/v1/chat/voice` - 语音识别
-- `POST /api/v1/chat/tts` - 文字转语音
-- `GET /api/v1/chat/tts/audio/{filename}` - 获取生成的语音文件
 - `GET /api/v1/chat/logs/today` - 获取今日日志
 - `GET /api/v1/chat/logs/list` - 列出所有日志文件
 - `GET /api/v1/chat/logs/{date}` - 获取指定日期日志

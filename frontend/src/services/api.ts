@@ -14,12 +14,6 @@ export const API_ENDPOINTS = {
   chat: () => `${API_BASE_URL}/api/v1/chat/`,
   chatStream: () => `${API_BASE_URL}/api/v1/chat/stream`,
   chatStarter: () => `${API_BASE_URL}/api/v1/chat/starter`,
-  voiceInput: () => `${API_BASE_URL}/api/v1/chat/voice`,
-  voiceChat: () => `${API_BASE_URL}/api/v1/chat/voice/chat`,
-
-  // TTS endpoints
-  tts: () => `${API_BASE_URL}/api/v1/chat/tts`,
-  ttsAudio: (filename: string) => `${API_BASE_URL}/api/v1/chat/tts/audio/${filename}`,
 
   // Topic endpoints
   topicList: (characterId?: string) =>

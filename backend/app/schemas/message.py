@@ -38,28 +38,3 @@ class StreamChatResponse(BaseModel):
     chunk: str = Field(..., description="Chunk of the response text")
     character_id: str = Field(..., description="Character generating the response")
     done: bool = Field(default=False, description="Whether this is the final chunk")
-
-
-class VoiceResponse(BaseModel):
-    """Response from voice input processing."""
-    text: str = Field(..., description="Recognized text from voice input")
-    emotion: Optional[str] = Field(None, description="Detected emotion from voice (e.g., [开心], [伤心])")
-    event: Optional[str] = Field(None, description="Detected event from voice (e.g., [鼓掌], [大笑])")
-    success: bool = Field(..., description="Whether recognition was successful")
-    error: Optional[str] = Field(None, description="Error message if recognition failed")
-
-
-class TTSRequest(BaseModel):
-    """Request for text-to-speech synthesis."""
-    text: str = Field(..., description="Text to synthesize to speech")
-    engine: str = Field(default="vits", description="TTS engine: 'vits' or 'pyttsx3'")
-    character_id: str = Field(default="sister_001", description="Character ID (for voice selection)")
-
-
-
-class TTSResponse(BaseModel):
-    """Response from text-to-speech synthesis."""
-    success: bool = Field(..., description="Whether synthesis was successful")
-    audio_path: Optional[str] = Field(None, description="Path to the generated audio file")
-    error: Optional[str] = Field(None, description="Error message if synthesis failed")
-    engine: str = Field(..., description="TTS engine used")

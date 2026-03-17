@@ -85,12 +85,33 @@ def detect_tag_line(content):
     if not lines:
         return {'has_tag': False, 'last_line': '', 'content_without_last_line': content}
 
+    # 首先检查最后一行是否是 Tag 行
     last_line = lines[-1].strip()
     tag_pattern = re.compile(r'^Tag:\s*.+', re.IGNORECASE)
     has_tag = tag_pattern.match(last_line) is not None
-    content_without_last_line = '\n'.join(lines[:-1]) if has_tag else content
 
-    return {'has_tag': has_tag, 'last_line': last_line, 'content_without_last_line': content_without_last_line}
+    if has_tag:
+        content_without_last_line = '\n'.join(lines[:-1])
+        return {'has_tag': True, 'last_line': last_line, 'content_without_last_line': content_without_last_line}
+
+    # 如果最后一行不是 Tag 行，尝试在所有行中查找 Tag 行
+    # 支持 "xxx Tag: xxx" 这种在同一行的情况
+    inline_tag_pattern = re.compile(r'(.+?)\s*Tag:\s*(.+)$', re.IGNORECASE)
+    for i, line in enumerate(lines):
+        match = inline_tag_pattern.match(line.strip())
+        if match:
+            # 找到内联 Tag，拆分成内容和 Tag
+            content_part = match.group(1).strip()
+            tag_part = match.group(2).strip()
+            # 重组内容：前面的行 + 内容部分（不含 Tag）
+            content_lines = lines[:i]
+            if content_part:
+                content_lines.append(content_part)
+            new_content = '\n'.join(content_lines)
+            new_tag_line = f"Tag: {tag_part}"
+            return {'has_tag': True, 'last_line': new_tag_line, 'content_without_last_line': new_content}
+
+    return {'has_tag': False, 'last_line': '', 'content_without_last_line': content}
 
 
 def fix_tag_format(tag_line):

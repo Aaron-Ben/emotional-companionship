@@ -1,8 +1,7 @@
 /** Traditional Chat Panel Component - Refined Elegant Style */
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { AudioRecorder, recognizeFromBlob } from '../../services/voiceService';
-import type { DisplayMessage, RecordingState } from '../../types/chat';
+import type { DisplayMessage } from '../../types/chat';
 import clsx from 'clsx';
 import { AIMessageBubble, AILoadingBubble, UserMessageBubble } from '../chat';
 
@@ -11,8 +10,6 @@ interface TraditionalChatPanelProps {
   loading: boolean;
   streamingMessage: string;
   onSendMessage: (content: string) => void;
-  onVoiceInputStart?: () => void;
-  onVoiceInputEnd?: () => void;
   placeholder?: string;
   characterId?: string;
   characterName?: string;
@@ -23,8 +20,6 @@ export const TraditionalChatPanel: React.FC<TraditionalChatPanelProps> = ({
   loading,
   streamingMessage,
   onSendMessage,
-  onVoiceInputStart,
-  onVoiceInputEnd,
   placeholder = '聊聊天吧～',
   characterId,
   characterName,
@@ -33,9 +28,6 @@ export const TraditionalChatPanel: React.FC<TraditionalChatPanelProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const recorderRef = useRef<AudioRecorder | null>(null);
-  const [recordingState, setRecordingState] = useState<RecordingState>('idle');
-  const [recordingTime, setRecordingTime] = useState(0);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -51,23 +43,6 @@ export const TraditionalChatPanel: React.FC<TraditionalChatPanelProps> = ({
     }
   }, [input]);
 
-  // Recording timer
-  useEffect(() => {
-    let interval: number | null = null;
-    if (recordingState === 'recording') {
-      interval = window.setInterval(() => {
-        setRecordingTime((prev) => prev + 1);
-      }, 1000);
-    } else {
-      setRecordingTime(0);
-    }
-    return () => {
-      if (interval !== null) {
-        clearInterval(interval);
-      }
-    };
-  }, [recordingState]);
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -77,7 +52,7 @@ export const TraditionalChatPanel: React.FC<TraditionalChatPanelProps> = ({
 
   const handleSend = useCallback(() => {
     const trimmedInput = input.trim();
-    if (trimmedInput && !loading && recordingState === 'idle') {
+    if (trimmedInput && !loading) {
       onSendMessage(trimmedInput);
       setInput('');
       // Reset textarea height
@@ -85,54 +60,7 @@ export const TraditionalChatPanel: React.FC<TraditionalChatPanelProps> = ({
         textareaRef.current.style.height = 'auto';
       }
     }
-  }, [input, loading, recordingState, onSendMessage]);
-
-  const handleVoiceStart = useCallback(async () => {
-    if (loading || recordingState !== 'idle') return;
-
-    try {
-      const recorder = new AudioRecorder();
-      recorderRef.current = recorder;
-      await recorder.start();
-
-      setRecordingState('recording');
-      onVoiceInputStart?.();
-    } catch (error) {
-      console.error('Failed to start recording:', error);
-      recorderRef.current = null;
-    }
-  }, [loading, recordingState, onVoiceInputStart]);
-
-  const handleVoiceEnd = useCallback(async () => {
-    if (recordingState !== 'recording' || !recorderRef.current) return;
-
-    setRecordingState('processing');
-
-    try {
-      const audioBlob = await recorderRef.current.stop();
-      recorderRef.current = null;
-
-      const result = await recognizeFromBlob(audioBlob, { characterId: characterId || 'sister_001' });
-
-      if (result.success && result.text) {
-        const newText = input + (input ? ' ' : '') + result.text;
-        setInput(newText);
-      } else if (result.error) {
-        console.error('Voice recognition failed:', result.error);
-      }
-    } catch (error) {
-      console.error('Voice input error:', error);
-    } finally {
-      setRecordingState('idle');
-      onVoiceInputEnd?.();
-    }
-  }, [recordingState, input, onVoiceInputEnd, characterId]);
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  }, [input, loading, onSendMessage]);
 
   return (
     <div className="flex flex-col h-full bg-transparent">
@@ -204,53 +132,20 @@ export const TraditionalChatPanel: React.FC<TraditionalChatPanelProps> = ({
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={placeholder}
-                disabled={loading || recordingState === 'recording'}
+                disabled={loading}
                 rows={1}
               />
               <div className="flex items-center gap-2">
-                {/* Voice input button - 精美的渐变效果 */}
-                <button
-                  className={clsx(
-                    'w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all duration-200 text-lg disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 shadow-sm hover:shadow-md',
-                    recordingState === 'recording'
-                      ? 'bg-gradient-to-r from-rose-400 to-pink-500 text-white px-4 rounded-2xl shadow-rose-soft hover:shadow-rose-soft-lg'
-                      : 'bg-gradient-to-r from-emerald-400 to-emerald-500 hover:from-emerald-500 hover:to-emerald-600 text-white'
-                  )}
-                  onMouseDown={handleVoiceStart}
-                  onMouseUp={handleVoiceEnd}
-                  onMouseLeave={handleVoiceEnd}
-                  onTouchStart={(e) => { e.preventDefault(); handleVoiceStart(); }}
-                  onTouchEnd={(e) => { e.preventDefault(); handleVoiceEnd(); }}
-                  disabled={loading || recordingState !== 'idle'}
-                  title={
-                    recordingState === 'recording' ? '松开结束录音' :
-                    recordingState === 'processing' ? '识别中...' :
-                    '按住说话'
-                  }
-                  type="button"
-                >
-                  {recordingState === 'recording' ? (
-                    <>
-                      <span>🎤</span>
-                      <span className="text-[13px] font-semibold tabular-nums ml-1">{formatTime(recordingTime)}</span>
-                    </>
-                  ) : recordingState === 'processing' ? (
-                    <span className="animate-spin text-lg">⌛</span>
-                  ) : (
-                    <span>🎤</span>
-                  )}
-                </button>
-
                 {/* Send button - 精美的渐变和发光效果 */}
                 <button
                   className={clsx(
                     'w-10 h-10 rounded-full flex items-center justify-center gap-1 shrink-0 text-sm font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95',
-                    input.trim() && !loading && recordingState === 'idle'
+                    input.trim() && !loading
                       ? 'bg-gradient-to-r from-rose-400 via-rose-500 to-pink-500 text-white shadow-rose-soft hover:shadow-rose-soft-lg hover:-translate-y-0.5'
                       : 'bg-gradient-to-r from-neutral-300 to-neutral-400 dark:from-neutral-600 dark:to-neutral-700 text-neutral-500 dark:text-neutral-400'
                   )}
                   onClick={handleSend}
-                  disabled={!input.trim() || loading || recordingState !== 'idle'}
+                  disabled={!input.trim() || loading}
                   title="发送"
                   type="button"
                 >

@@ -254,8 +254,12 @@ class CharacterService:
                 daily_edit_path = Path(__file__).parent.parent.parent / "plugins" / "daily_note" / "daily_edit.txt"
                 try:
                     daily_content = daily_edit_path.read_text(encoding='utf-8')
+                    # Replace placeholders in daily_content
+                    today = datetime.now().strftime('%Y-%m-%d')
+                    daily_content = daily_content.replace('{TODAY}', today)
+                    daily_content = daily_content.replace('{CHARACTER_ID}', character_id)
                     content = content.replace('{{daily}}', daily_content)
-                    logger.debug(f"Replaced {{daily}} placeholder for {character_id}")
+                    logger.info(f"[DailyNote] Replaced {{daily}} placeholder for {character_id} with today={today}")
                 except Exception as e:
                     logger.warning(f"Failed to load daily_edit.txt: {e}")
                     content = content.replace('{{daily}}', '')
