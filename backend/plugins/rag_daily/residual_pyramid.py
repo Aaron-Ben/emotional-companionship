@@ -534,33 +534,3 @@ class ResidualPyramid:
             },
         }
 
-    def get_residual_at_level(self, level: int) -> Optional[np.ndarray]:
-        """
-        Get the residual vector at a specific level.
-
-        Note: Full residual vectors are not stored by default to save memory.
-        You would need to modify analyze() to store them if needed.
-        """
-        _ = level  # Reserved for future implementation
-        return None
-
-    def get_energy_profile(self) -> List[float]:
-        """Get the energy profile across all levels."""
-        return [level.residual_energy_ratio for level in self.levels]
-
-    def clear(self) -> None:
-        """Clear all stored data."""
-        self.levels.clear()
-        self.total_explained_energy = 0.0
-        self.final_residual = None
-        self.features = {}
-
-    def export_state(self) -> Dict:
-        """Export pyramid state."""
-        return {
-            "levels": [level.to_dict() for level in self.levels],
-            "total_explained_energy": self.total_explained_energy,
-            "final_residual": self.final_residual.tolist() if self.final_residual is not None else [],
-            "features": self.features,
-            "config": self.config,
-        }

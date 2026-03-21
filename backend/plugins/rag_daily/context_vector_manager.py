@@ -17,19 +17,6 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-
-def cosine_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
-    """计算余弦相似度"""
-    if vec_a.shape != vec_b.shape:
-        return 0.0
-    dot = np.dot(vec_a, vec_b)
-    norm_a = np.linalg.norm(vec_a)
-    norm_b = np.linalg.norm(vec_b)
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
-
-
 class ContextVectorManager:
     """
     管理对话消息的上下文向量映射。
@@ -145,60 +132,6 @@ class ContextVectorManager:
                 return entry['vector']
         return None
 
-    def _cosine_similarity(self, vec_a: np.ndarray, vec_b: np.ndarray) -> float:
-        """
-        计算余弦相似度
-
-        Args:
-            vec_a: 向量A
-            vec_b: 向量B
-
-        Returns:
-            余弦相似度 (0.0 ~ 1.0)
-        """
-        return cosine_similarity(vec_a, vec_b)
-
-    def _finalize_segment(
-        self,
-        vectors: List[np.ndarray],
-        texts: List[str],
-        roles: List[str],
-        start_index: int,
-        end_index: int
-    ) -> Dict[str, Any]:
-        """
-        完成分段的计算（计算平均向量并归一化）
-
-        Args:
-            vectors: 分段中的向量列表
-            texts: 分段中的文本列表
-            roles: 分段中的角色列表
-            start_index: 起始索引
-            end_index: 结束索引
-
-        Returns:
-            分段字典 {vector, text, roles, range, count}
-        """
-        if not vectors:
-            return None
-
-        # 计算平均向量
-        count = len(vectors)
-        avg_vec = np.mean(vectors, axis=0)
-
-        # 归一化
-        norm = np.linalg.norm(avg_vec)
-        if norm > 1e-9:
-            avg_vec = avg_vec / norm
-
-        return {
-            'vector': avg_vec,
-            'text': '\n'.join(texts),
-            'roles': list(set(roles)),  # 去重角色
-            'range': [start_index, end_index],
-            'count': count
-        }
-
     def update_context(
         self,
         messages: List[Dict],
@@ -218,10 +151,11 @@ class ContextVectorManager:
             logger.warning("[ContextVectorManager] ⚠️ Messages is not a list, skipping update")
             return
 
+        options = options or {}                                                                                                                   
+        allow_api = options.get('allow_api', False)                                                                                             
+                                                                                                                                                    
         new_assistant_vectors = []
         new_user_vectors = []
-        fuzzy_match_count = 0
-        cache_hit_count = 0
 
         # 识别最后的消息索引以进行排除
         last_user_index = next((
@@ -236,12 +170,11 @@ class ContextVectorManager:
 
         logger.debug(f"[ContextVectorManager] 📊 Last user index: {last_user_index}, Last AI index: {last_ai_index}")
 
+        tasks = []
         for index, msg in enumerate(messages):
             # 排除逻辑：系统消息、最后一个用户消息、最后一个 AI 消息
             role = msg.get('role')
-            if role == 'system':
-                continue
-            if index == last_user_index or index == last_ai_index:
+            if role == 'system' or index == last_user_index or index == last_ai_index:
                 continue
 
             # 获取内容
@@ -270,16 +203,12 @@ class ContextVectorManager:
                 vector = self._find_fuzzy_match(normalized)
                 if vector is not None:
                     match_source = "fuzzy"
-                    fuzzy_match_count += 1
 
                 # 3. 尝试从插件的 Embedding 缓存中获取（不触发 API）
                 if vector is None and embedding_cache:
                     vector = embedding_cache.get(content)
                     if vector is not None:
                         match_source = "embedding_cache"
-
-                # 4. 如果缓存也没有，且允许 API，则请求新向量（触发 API）
-                # 注意：当前实现中，API 调用应在外部处理
 
                 # 存入映射
                 if vector is not None:
@@ -301,15 +230,74 @@ class ContextVectorManager:
         self.history_assistant_vectors = new_assistant_vectors
         self.history_user_vectors = new_user_vectors
 
-        # 输出详细统计
-        logger.info(
-            f"[ContextVectorManager] ✅ Context updated: "
-            f"{len(self.history_assistant_vectors)} AI vectors, "
-            f"{len(self.history_user_vectors)} user vectors, "
-            f"{len(self.vector_map)} total entries in cache"
-        )
-        if fuzzy_match_count > 0:
-            logger.info(f"[ContextVectorManager] 🎭 Fuzzy matches: {fuzzy_match_count}, Cache hits: {cache_hit_count}")
+    def aggregate_context(self, role: str = 'assistant') -> Optional[np.ndarray]:
+        """                                                                  
+        聚合上下文向量（指数衰减加权平均）。                                                                                                      
+                                                                                                                                                    
+        Args:                                                                                                                                     
+            role: 'assistant' 或 'user'                                                                                                           
+                                                                                                                                                    
+        Returns:
+            聚合后的向量，或 None（如果无向量）
+        """                                                                                                                                       
+        vectors = (self.history_assistant_vectors
+                    if role == 'assistant'                                                                                                         
+                    else self.history_user_vectors)                                                                                                
+    
+        if len(vectors) == 0:                                                                                                                     
+            return None
+
+        # 限制窗口：只取最近的 max_context_window 个
+        if len(vectors) > self.max_context_window:
+            vectors = vectors[-self.max_context_window:]
+                                                                                                                                                    
+        dim = len(vectors[0])
+        aggregated = np.zeros(dim, dtype=np.float32)                                                                                              
+        total_weight = 0.0
+                                                                                                                                                    
+        # 从旧到新遍历（idx=0 为最旧）                                                                                                            
+        for idx, vector in enumerate(vectors):                                                                                                    
+            age = len(vectors) - idx  # 新向量 age 小，权重高                                                                                     
+            weight = self.decay_rate ** age                                                                                                       
+                                                                                                                                                    
+            aggregated += vector * weight                                                                                                         
+            total_weight += weight
+                                                                                                                                                    
+        if total_weight > 0:
+            aggregated /= total_weight                                                                                                            
+                                                                                                                                                    
+        return aggregated
+
+    def compute_logic_depth(vector: np.ndarray, topK: int = 64) -> float:                                                                         
+        """                                                                                                                                       
+        计算向量逻辑深度（稀疏度/集中度）。                                                                                                       
+                                                                                                                                                    
+        Args:                                                                                                                                     
+            vector: 输入向量 (numpy array)                                                                                                        
+            topK: Top-K 维度数量                                                                                                                  
+                                                                                                                                                
+        Returns:                                                                                                                                  
+            逻辑深度值 (0.0 ~ 1.0)                                                                                                                
+        """                                                                                                                                       
+        if vector is None or len(vector) == 0:                                                                                                    
+            return 0.0                                                                                                                            
+                                                                                                                                                    
+        dim = len(vector)                                                                                                                         
+        energies = vector ** 2
+        total_energy = np.sum(energies)                                                                                                           
+    
+        if total_energy < 1e-9:                                                                                                                   
+            return 0.0
+
+        sorted_energies = np.sort(energies)[::-1]  # 降序排序                                                                                     
+        actual_topK = min(topK, dim)
+        topK_energy = np.sum(sorted_energies[:actual_topK])                                                                                       
+                                                                                                                                                    
+        concentration = topK_energy / total_energy                                                                                                
+        expected_uniform = actual_topK / dim                                                                                                      
+        L = (concentration - expected_uniform) / (1 - expected_uniform)                                                                           
+                
+        return max(0.0, min(1.0, L))
 
     def compute_semantic_width(self, vector: Optional[np.ndarray]) -> float:
         """
@@ -327,130 +315,6 @@ class ContextVectorManager:
         magnitude = np.linalg.norm(vector)
         spread_factor = 1.2  # 可调参数
         return magnitude * spread_factor
-
-    def segment_context(
-        self,
-        messages: List[Dict],
-        similarity_threshold: float = 0.70
-    ) -> List[Dict[str, Any]]:
-        """
-        基于语义向量的上下文分段 (Semantic Segmentation)
-        将连续的、高相似度的消息归并为一个段落 (Segment/Topic)
-
-        Args:
-            messages: 消息列表 (通常是 history)
-            similarity_threshold: 分段阈值，低于此值则断开 (默认 0.70)
-
-        Returns:
-            分段列表，每个分段包含 {vector, text, role, range, count}
-        """
-        logger.debug(f"[ContextVectorManager] 📊 Segmenting context with threshold={similarity_threshold}")
-
-        # 重新构建有序序列
-        sequence = []
-        for index, msg in enumerate(messages):
-            # 跳过系统消息和无关消息
-            if msg.get('role') == 'system':
-                continue
-
-            # 获取内容
-            content = msg.get('content', '')
-            if isinstance(content, list):
-                text_items = [item.get('text', '') for item in content if item.get('type') == 'text']
-                content = ' '.join(text_items)
-
-            if not content or len(content) < 2:
-                continue
-
-            normalized = self._normalize(content)
-            content_hash = self._generate_hash(normalized)
-
-            # 尝试精确匹配
-            entry = self.vector_map.get(content_hash)
-
-            # 尝试模糊匹配 (如果精确匹配失败)
-            if entry is None:
-                fuzzy_vector = self._find_fuzzy_match(normalized)
-                if fuzzy_vector is not None:
-                    entry = {
-                        'vector': fuzzy_vector,
-                        'role': msg.get('role'),
-                        'original_text': content,
-                    }
-
-            if entry and entry.get('vector') is not None:
-                sequence.append({
-                    'index': index,
-                    'role': msg.get('role'),
-                    'text': content,
-                    'vector': entry['vector']
-                })
-
-        if not sequence:
-            return []
-
-        # 执行分段
-        segments = []
-        current_segment = {
-            'vectors': [sequence[0]['vector']],
-            'texts': [sequence[0]['text']],
-            'start_index': sequence[0]['index'],
-            'end_index': sequence[0]['index'],
-            'roles': [sequence[0]['role']]
-        }
-
-        for i in range(1, len(sequence)):
-            curr = sequence[i]
-            prev = sequence[i - 1]
-
-            # 计算与上一条的相似度
-            sim = self._cosine_similarity(prev['vector'], curr['vector'])
-
-            # 角色变化也可以作为分段的弱信号，但在这里我们主要看语义
-            # 如果相似度高，即使角色不同也可以合并（例如连续的问答对，讨论同一个话题）
-            # 如果相似度低，即使角色相同也应该断开
-
-            if sim >= similarity_threshold:
-                # 合并
-                current_segment['vectors'].append(curr['vector'])
-                current_segment['texts'].append(curr['text'])
-                current_segment['end_index'] = curr['index']
-                current_segment['roles'].append(curr['role'])
-            else:
-                # 断开，保存旧段
-                segments.append(self._finalize_segment(
-                    current_segment['vectors'],
-                    current_segment['texts'],
-                    current_segment['roles'],
-                    current_segment['start_index'],
-                    current_segment['end_index']
-                ))
-                # 开启新段
-                current_segment = {
-                    'vectors': [curr['vector']],
-                    'texts': [curr['text']],
-                    'start_index': curr['index'],
-                    'end_index': curr['index'],
-                    'roles': [curr['role']]
-                }
-
-        # 保存最后一个段
-        segments.append(self._finalize_segment(
-            current_segment['vectors'],
-            current_segment['texts'],
-            current_segment['roles'],
-            current_segment['start_index'],
-            current_segment['end_index']
-        ))
-
-        logger.info(f"[ContextVectorManager] ✅ Segmentation complete: {len(segments)} segments created")
-        for i, seg in enumerate(segments[:10]):
-            text_preview = seg['text'][:60].replace('\n', ' ')
-            logger.info(f"[ContextVectorManager] 📝 Segment[{i}]: {seg['count']} msgs, roles={seg['roles']}, text=\"{text_preview}...\"")
-        if len(segments) > 10:
-            logger.debug(f"[ContextVectorManager]   ... and {len(segments) - 10} more segments")
-
-        return segments
 
     def get_context_summary(self) -> Dict:
         """

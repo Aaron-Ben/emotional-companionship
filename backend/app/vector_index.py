@@ -9,24 +9,15 @@ from typing import Dict, Optional, List, Tuple, Any, Union, Set
 from dataclasses import dataclass, field
 import logging
 
-# ==================== NumPy ====================
 import numpy as np
-
-# ==================== Database ====================
 from sqlalchemy.orm import Session
 from app.models.database import DiaryFileTable, ChunkTable, TagTable, FileTagTable, KVStoreTable, SessionLocal
-
-# ==================== Services ====================
 from app.services.chunk_text import chunk_text
 from app.services.embedding import EmbeddingService
 from app.services.character_service import CharacterService
-
-# ==================== RAG Daily Plugins ====================
 from plugins.rag_daily.epa_module import EPAModule
 from plugins.rag_daily.residual_pyramid import ResidualPyramid
-from plugins.rag_daily.result_deduplicator import ResultDeduplicator
 
-# ==================== 配置 ====================
 @dataclass
 class VectorIndexConfig:
     """向量索引配置"""
@@ -52,7 +43,6 @@ class VectorIndexConfig:
     tag_blacklist: set = field(default_factory=set)
     tag_blacklist_super: List[str] = field(default_factory=list)
 
-    # ==================== TagMemo V3 配置 ====================
     # 语言置信度补偿
     lang_confidence_enabled: bool = True
     lang_penalty_unknown: float = 0.05
@@ -90,11 +80,9 @@ class VectorIndexConfig:
         return project_root / "data" / "daily"
 
 
-# ==================== VexusIndex 导入 ====================
 from vector_db import VexusIndex
 
 
-# ==================== 搜索结果数据类 ====================
 @dataclass
 class SearchResult:
     """搜索结果数据类"""
@@ -108,7 +96,6 @@ class SearchResult:
     core_tags_matched: List[str] = field(default_factory=list) # 核心标签匹配
 
 
-# ==================== Tag 增强结果 ====================
 @dataclass
 class TagBoostResult:
     """Tag 增强结果"""
@@ -116,7 +103,6 @@ class TagBoostResult:
     info: Optional[Dict[str, Any]]     # 增强信息（匹配的标签等）
 
 
-# ==================== 核心管理类 ====================
 class VectorIndex:
     """向量索引管理器 - 支持多索引、Tag 搜索和增强"""
 
@@ -132,20 +118,11 @@ class VectorIndex:
         self.file_retry_count: Dict[str, int] = {}  # 文件重试计数
         self.is_processing: bool = False  # 是否正在处理
         self.batch_timer: Optional[asyncio.Task] = None  # 批处理定时器
-
-        # 文件监视器
         self.watcher = None  # watchdog.Observer 实例
         self.event_loop: Optional[asyncio.AbstractEventLoop] = None  # 主事件循环
-
-        # ==================== TagMemo V3 模块 ====================
         self.epa: Optional[EPAModule] = None                    # EPAModule 实例
         self.residual_pyramid: Optional[ResidualPyramid] = None       # ResidualPyramid 实例
-        self.result_deduplicator: Optional[ResultDeduplicator] = None    # ResultDeduplicator 实例
-
-        # ==================== Tag 共现矩阵 ====================
         self.tag_cooccurrence_matrix: Dict[int, Dict[int, float]] = {}
-
-        # ==================== RAG 热调控参数 ====================
         self.rag_params: Dict[str, Any] = {}
         self.rag_params_watcher: Optional[Any] = None     # 文件监视器
 
@@ -158,7 +135,6 @@ class VectorIndex:
             store_path.mkdir(parents=True, exist_ok=True)
             logging.info(f"[VectorIndex] Created store path: {store_path}")
 
-    # ==================== TagMemo V3: RAG 参数加载 ====================
     async def load_rag_params(self) -> None:
         """
         加载 RAG 热调控参数
@@ -214,7 +190,6 @@ class VectorIndex:
         except Exception as e:
             logging.warning(f"[VectorIndex] ⚠️ 无法启动参数文件监听: {e}")
 
-    # ==================== TagMemo V3: 模块初始化 ====================
     async def _init_epa_module(self) -> None:
         """
         初始化 EPA 模块
@@ -283,37 +258,6 @@ class VectorIndex:
         except Exception as e:
             logging.error(f"[VectorIndex] ❌ Residual Pyramid initialization error: {e}")
             self.residual_pyramid = None
-
-    async def _init_result_deduplicator(self) -> None:
-        """
-        初始化结果去重器模块
-
-        结果去重器用于 SVD 主题分析和结果去重
-        """
-        try:
-            logging.info("[VectorIndex] 🔄 Initializing Result Deduplicator Module...")
-
-            # 获取数据库连接
-            db_path = str(self.config.store_path / "emotional_companionship.db")
-            import sqlite3
-            db = sqlite3.connect(db_path)
-
-            self.result_deduplicator = ResultDeduplicator(
-                db=db,
-                config={
-                    'dimension': self.config.dimension,
-                    'max_results': 20,
-                    'topic_count': 8,
-                    'min_energy_ratio': 0.1,
-                    'redundancy_threshold': 0.85,
-                }
-            )
-
-            logging.info("[VectorIndex] ✅ Result Deduplicator Module initialized")
-
-        except Exception as e:
-            logging.error(f"[VectorIndex] ❌ Result Deduplicator initialization error: {e}")
-            self.result_deduplicator = None
 
     async def _build_cooccurrence_matrix(self) -> None:
         """
@@ -415,53 +359,6 @@ class VectorIndex:
 
         return 1.0
 
-    def _filter_matched_tags(
-        self,
-        deduplicated_tags: List[Dict],
-        config: Dict[str, Any]
-    ) -> List[str]:
-        """
-        过滤匹配的标签
-
-        基于阈值过滤匹配的标签，核心标签始终包含
-
-        Args:
-            deduplicated_tags: 去重后的标签列表
-            config: RAG 配置参数
-
-        Returns:
-            过滤后的标签名称列表
-        """
-        if not deduplicated_tags:
-            return []
-
-        max_weight = max([t['adjustedWeight'] for t in deduplicated_tags])
-
-        result = []
-        for t in deduplicated_tags:
-            # 核心 Tag 始终包含
-            if t.get('isCore'):
-                result.append(t.get('name', ''))
-                continue
-
-            tag_name = t.get('name', '')
-
-            # 技术标签过滤
-            is_tech = (
-                not re.search(r'[\u4e00-\u9fa5]', tag_name) and
-                re.match(r'^[A-Za-z0-9\-_.\s]+$', tag_name)
-            )
-            if is_tech:
-                threshold = config.get('techTagThreshold', self.config.tech_tag_threshold)
-                if t['adjustedWeight'] > max_weight * threshold:
-                    result.append(tag_name)
-            else:
-                threshold = config.get('normalTagThreshold', self.config.normal_tag_threshold)
-                if t['adjustedWeight'] > max_weight * threshold:
-                    result.append(tag_name)
-
-        return [t for t in result if t]
-
     # ==================== 初始化 ====================
     async def initialize(self) -> None:
         """
@@ -498,9 +395,6 @@ class VectorIndex:
 
         # 7. 初始化残差金字塔
         await self._init_residual_pyramid()
-
-        # 8. 初始化结果去重器
-        await self._init_result_deduplicator()
 
         logging.info("[VectorIndex] ✅ System Ready")
 
@@ -690,77 +584,8 @@ class VectorIndex:
             # 如果 Rust 恢复返回 0 条，尝试手动恢复
             if count == 0 and table_type == "chunks":
                 logging.warning(f"[VectorIndex] ⚠️ Rust recovery returned 0 vectors, trying manual recovery...")
-                await self._manual_recover_chunks(idx, diary_name)
         except Exception as e:
             logging.error(f"[VectorIndex] ❌ Rust recovery failed: {e}")
-            # 如果 Rust 恢复失败，尝试手动恢复
-            if table_type == "chunks":
-                logging.info(f"[VectorIndex] 🔄 Attempting manual recovery as fallback...")
-                await self._manual_recover_chunks(idx, diary_name)
-
-    async def _manual_recover_chunks(
-        self,
-        idx: VexusIndex,
-        diary_name: str
-    ) -> None:
-        """
-        手动从数据库恢复 chunks 数据（备用方法）
-
-        Args:
-            idx: 索引实例
-            diary_name: 日记本名称
-        """
-        import sqlite3
-        import json
-        import time
-
-        logging.info(f"[VectorIndex] 🔧 Starting manual recovery for \"{diary_name}\"...")
-        try:
-            db_path = self.config.store_path / "emotional_companionship.db"
-            db = sqlite3.connect(str(db_path))
-            cursor = db.cursor()
-
-            # 查询该日记的所有 chunks
-            query = """
-                SELECT c.id, c.vector
-                FROM chunks c
-                JOIN diary_files df ON c.file_id = df.id
-                WHERE df.diary_name = ?
-                AND c.vector IS NOT NULL
-            """
-            cursor.execute(query, (diary_name,))
-            rows = cursor.fetchall()
-
-            if not rows:
-                logging.warning(f"[VectorIndex] ⚠️ No chunks found for \"{diary_name}\" in database")
-                return
-
-            # 批量添加向量到索引
-            count = 0
-            for chunk_id, vector_json in rows:
-                try:
-                    vector = json.loads(vector_json)
-                    if vector:
-                        vec_bytes = self._serialize_vector(vector)
-                        idx.add(chunk_id, vec_bytes)
-                        count += 1
-                except (json.JSONDecodeError, TypeError) as e:
-                    logging.debug(f"[VectorIndex] ⚠️ Failed to parse vector for chunk {chunk_id}: {e}")
-                    continue
-
-            logging.info(f"[VectorIndex] ✅ Manual recovery complete: {count} vectors added")
-
-            # 保存重建的索引
-            safe_name = hashlib.md5(diary_name.encode()).hexdigest()
-            idx_path = str(self.config.store_path / f"index_diary_{safe_name}.usearch")
-            idx.save(idx_path)
-            logging.info(f"[VectorIndex] 💾 Saved rebuilt index to disk")
-
-        except Exception as e:
-            logging.error(f"[VectorIndex] ❌ Manual recovery failed: {e}")
-        finally:
-            if 'db' in locals():
-                db.close()
 
     async def _recover_tags_from_db(self) -> None:
         """
@@ -787,22 +612,20 @@ class VectorIndex:
         arg2: Optional[Union[List[float], int]] = None,
         arg3: Optional[int] = 5,
         arg4: Optional[float] = 0,
-        arg5: Optional[List[str]] = None,
     ) -> List[SearchResult]:
         """
         统一搜索接口 - 支持多种参数组合
 
         参数组合：
-        1. search(diary_name, vector, k, tag_boost, core_tags)
-        2. search(vector, k, tag_boost, core_tags)
+        1. search(diary_name, vector, k, tag_boost)
+        2. search(vector, k, tag_boost)
         3. search(query_text, k) - 需要先向量化
 
         Args:
             arg1: 日记本名称 或 向量 或 查询文本
             arg2: 向量 或 k 值
             arg3: k 值 或 tag_boost
-            arg4: tag_boost 或 core_tags
-            arg5: core_tags
+            arg4: tag_boost
 
         Returns:
             搜索结果列表
@@ -821,7 +644,6 @@ class VectorIndex:
                 query_vec = arg2
                 k = arg3 if isinstance(arg3, int) else 5
                 tag_boost = arg4 if isinstance(arg4, (int, float)) else 0
-                core_tags = arg5 if arg5 else []
             elif isinstance(arg1, str):
                 # 纯字符串查询，返回空（需要先向量化）
                 return []
@@ -835,10 +657,7 @@ class VectorIndex:
             if not query_vec:
                 return []
 
-            if diary_name:
-                return await self._search_specific_index(diary_name, query_vec, k, tag_boost, core_tags or [])
-            else:
-                return await self._search_all_indices(query_vec, k, tag_boost, core_tags or [])
+            return await self._search_specific_index(diary_name, query_vec, k, tag_boost, core_tags or [])
 
         except Exception as e:
             logging.error(f"[VectorIndex] Search error: {e}")
@@ -936,73 +755,6 @@ class VectorIndex:
         finally:
             db.close()
 
-    async def _search_all_indices(
-        self,
-        vector: List[float],
-        k: int,
-        tag_boost: float,
-        core_tags: List[str]
-    ) -> List[SearchResult]:
-        """
-        在所有日记本索引中搜索
-
-        Args:
-            vector: 查询向量
-            k: 返回结果数量
-            tag_boost: 标签增强因子
-            core_tags: 核心标签列表
-
-        Returns:
-            搜索结果列表
-        """
-        # 应用 Tag 增强（如果启用）
-        search_vec = vector
-        tag_info = None
-
-        logging.info(f"[VectorIndex] 🏷️ TagBoost 参数: tag_boost={tag_boost:.3f}, core_tags={len(core_tags) if core_tags else 0}, 启用={'是' if tag_boost > 0 and core_tags else '否'}")
-
-        if tag_boost > 0 and core_tags:
-            logging.info(f"[VectorIndex] ✅ TagBoost 已启用，开始增强向量...")
-            boost_result = self.apply_tag_boost(vector, tag_boost, core_tags, core_boost_factor=1.33)
-            search_vec = boost_result.vector
-            tag_info = boost_result.info
-
-        search_buffer = self._serialize_vector(search_vec)
-
-        # 获取所有日记本名称
-        db: Session = SessionLocal()
-        try:
-            all_diaries = db.query(DiaryFileTable.diary_name).distinct().all()
-            diary_names = [d.diary_name for d in all_diaries]
-        finally:
-            db.close()
-
-        # 并行搜索所有索引
-        search_tasks = []
-        for diary_name in diary_names:
-            search_tasks.append(self._search_single_index(diary_name, search_buffer, k))
-
-        results_per_index = await asyncio.gather(*search_tasks, return_exceptions=True)
-
-        # 合并并排序结果
-        all_results = []
-        for results in results_per_index:
-            if isinstance(results, list):
-                all_results.extend(results)
-
-        # 按分数排序，取前 k 个
-        all_results.sort(key=lambda r: r.score, reverse=True)
-        top_k = all_results[:k]
-
-        # 更新 Tag 信息
-        if tag_info:
-            for result in top_k:
-                result.matched_tags = tag_info.matched_tags
-                result.boost_factor = tag_info.boost_factor
-                result.core_tags_matched = tag_info.core_tags_matched
-
-        return top_k
-
     async def _search_single_index(
         self,
         diary_name: str,
@@ -1029,7 +781,6 @@ class VectorIndex:
 
         用于时间感知检索中获取时间范围内的所有分块，然后计算相似度排序。
 
-        参考 JavaScript 原版实现：
         - 批量处理（500 个一批）以避免 SQLite 参数限制
         - 使用 JOIN 查询 chunks 和 files 表
         - 直接从数据库返回 vector
@@ -1112,92 +863,56 @@ class VectorIndex:
         finally:
             db.close()
 
-    # ==================== TagMemo V3: 核心增强算法 ====================
+    # ==================== TagMemo 核心增强算法 ====================
     def _apply_tag_memo_v3(
         self,
         vector: Union[List[float], np.ndarray],
         base_tag_boost: float,
-        core_tags: List[str] = [],
-        core_boost_factor: float = 1.33
     ) -> TagBoostResult:
         """
-        TagMemo V3 增强算法 - 完整实现
-
-        整合 EPA、残差金字塔、共现矩阵等多种技术进行智能语义增强
-
+        EPA、残差金字塔、共现矩阵等多种技术进行智能语义增强
         Args:
             vector: 原始查询向量
             base_tag_boost: 基础增强因子 (0-1)
-            core_tags: 核心标签列表
-            core_boost_factor: 核心标签增强因子
 
         Returns:
             TagBoostResult 包含增强后的向量和调试信息
         """
-        try:
-            # Step 1: 向量预处理
-            original_float32 = self._ensure_float32(vector)
-            dim = len(original_float32)
+        original_float32 = self._ensure_float32(vector)
+        dim = len(original_float32)
 
+        try:
             # 获取配置
             config = self.rag_params.get('VectorIndex', {})
 
-            # Step 2: EPA 分析
-            logging.debug("[VectorIndex] 🧠 Running EPA projection analysis...")
+            # Step 1: EPA 分析
             epa_result = self.epa.project(original_float32)
-            logging.debug(f"[VectorIndex]   EPA logic_depth: {epa_result.get('logic_depth', 0):.3f}, entropy: {epa_result.get('entropy', 0):.3f}")
-
-            logging.debug("[VectorIndex] 🌊 Detecting cross-domain resonance...")
             resonance = self.epa.detect_cross_domain_resonance(original_float32)
-            logging.debug(f"[VectorIndex]   Resonance: {resonance.get('resonance', 0):.3f}")
-
             query_world = (
                 epa_result['dominant_axes'][0]['label']
                 if epa_result['dominant_axes']
                 else 'Unknown'
             )
 
-            # Step 3: 残差金字塔分析
-            logging.debug("[VectorIndex] 🔺 Running residual pyramid analysis...")
+            # Step 2: 残差金字塔分析
             pyramid = self.residual_pyramid.analyze(original_float32)
             features = pyramid['features']
-            logging.debug(f"[VectorIndex]   Pyramid levels: {len(pyramid.get('levels', []))}, total_energy: {pyramid.get('total_explained_energy', 0):.3f}")
 
-            # Step 4: 动态调整策略
+            # Step 3: 动态调整策略
             logic_depth = epa_result['logic_depth']
             entropy_penalty = epa_result['entropy']
             resonance_boost = np.log1p(resonance['resonance'])
 
-            # 计算动态增强因子
-            act_range = config.get('activationMultiplier', self.config.activation_multiplier)
-            activation_multiplier = (
-                act_range[0] + features['tag_memo_activation'] * (act_range[1] - act_range[0])
-            )
-
+            activation_multiplier = 0.5 + features['tag_memo_activation'] * 1.5
             dynamic_boost_factor = (
-                (logic_depth * (1 + resonance_boost) / (1 + entropy_penalty * 0.5))
-                * activation_multiplier
-            )
+                logic_depth * (1 + resonance_boost) / (1 + entropy_penalty * 0.5)
+            ) * activation_multiplier
 
-            boost_range = config.get('dynamicBoostRange', self.config.dynamic_boost_range)
-            effective_tag_boost = base_tag_boost * np.clip(
-                dynamic_boost_factor, boost_range[0], boost_range[1]
-            )
+            effective_tag_boost = base_tag_boost * min(2.0, max(0.3, dynamic_boost_factor))
 
-            # 计算动态核心加权因子
-            # 目标范围：1.20 (20%) ~ 1.40 (40%)
-            # 逻辑：逻辑深度越高（意图明确）或覆盖率越低（新领域需要锚点），核心标签权重越高
-            core_metric = (logic_depth * 0.5) + ((1 - features['coverage']) * 0.5)
-            core_range = config.get('coreBoostRange', self.config.core_boost_range)
-            dynamic_core_boost_factor = core_range[0] + (
-                core_metric * (core_range[1] - core_range[0])
-            )
-
-            # Step 5: 收集金字塔 Tags 并应用世界观门控
+            # Step 4: 收集金字塔 Tags 并应用世界观门控
             all_tags = []
             seen_tag_ids = set()
-            safe_core_tags = [t.lower() for t in core_tags if isinstance(t, str)]
-            core_tag_set = set(safe_core_tags)
 
             levels = pyramid.get('levels', [])
             for level in levels:
@@ -1207,7 +922,6 @@ class VectorIndex:
                         continue
 
                     tag_name = t.get('name', '').lower() if t.get('name') else ''
-                    is_core = tag_name and tag_name in core_tag_set
 
                     # 语言置信度补偿
                     lang_penalty = self._apply_language_compensation(
@@ -1216,24 +930,14 @@ class VectorIndex:
 
                     # 世界观门控
                     layer_decay = 0.7 ** level.get('level', 0)
-
-                    # 🌟 核心 Tag 增强逻辑 (Spotlight)
                     # 个体相关度微调：如果核心标签本身与查询高度相关，给予额外奖励 (0.95 ~ 1.05x)
-                    if is_core:
-                        individual_relevance = t.get('similarity', 0.5)
-                        core_boost = dynamic_core_boost_factor * (0.95 + individual_relevance * 0.1)
-                    else:
-                        core_boost = 1.0
-
                     all_tags.append({
                         **t,
                         'adjustedWeight': (
                             t.get('contribution', t.get('weight', 0))
                             * layer_decay
                             * lang_penalty
-                            * core_boost
                         ),
-                        'isCore': is_core
                     })
                     seen_tag_ids.add(t['id'])
 
@@ -1258,41 +962,7 @@ class VectorIndex:
                             })
                             seen_tag_ids.add(rel_id)
 
-            # Step 7: 核心 Tag 补全
-            if core_tag_set:
-                missing_core_tags = [
-                    ct for ct in core_tag_set
-                    if not any(at.get('name', '').lower() == ct for at in all_tags)
-                ]
-
-                if missing_core_tags:
-                    db: Session = SessionLocal()
-                    try:
-                        rows = db.query(TagTable).filter(
-                            TagTable.name.in_(missing_core_tags)
-                        ).all()
-
-                        max_base_weight = (
-                            max([
-                                at['adjustedWeight'] / dynamic_core_boost_factor
-                                for at in all_tags
-                            ]) or 1.0
-                        )
-
-                        for row in rows:
-                            if row.id not in seen_tag_ids:
-                                all_tags.append({
-                                    'id': row.id,
-                                    'name': row.name,
-                                    'adjustedWeight': max_base_weight * dynamic_core_boost_factor,
-                                    'isCore': True,
-                                    'isVirtual': True
-                                })
-                                seen_tag_ids.add(row.id)
-                    finally:
-                        db.close()
-
-            # Step 8: 批量获取向量
+            # Step 5: 批量获取向量
             all_tag_ids = [t['id'] for t in all_tags]
             db: Session = SessionLocal()
             try:
@@ -1304,55 +974,11 @@ class VectorIndex:
             finally:
                 db.close()
 
-            # Step 9: 语义去重
-            deduplicated_tags = []
-            sorted_tags = sorted(
-                all_tags, key=lambda x: x['adjustedWeight'], reverse=True
-            )
-
-            dedup_threshold = config.get(
-                'deduplicationThreshold', self.config.deduplication_threshold
-            )
-
-            for tag in sorted_tags:
-                data = tag_data_map.get(tag['id'])
-                if not data or not data.get('vector'):
-                    continue
-
-                vec = np.array(json.loads(data['vector']), dtype=np.float32)
-                is_redundant = False
-
-                for existing in deduplicated_tags:
-                    existing_data = tag_data_map.get(existing['id'])
-                    if not existing_data or not existing_data.get('vector'):
-                        continue
-
-                    existing_vec = np.array(
-                        json.loads(existing_data['vector']), dtype=np.float32
-                    )
-
-                    similarity = float(
-                        np.dot(vec, existing_vec) /
-                        (np.linalg.norm(vec) * np.linalg.norm(existing_vec) + 1e-9)
-                    )
-
-                    if similarity > dedup_threshold:
-                        is_redundant = True
-                        existing['adjustedWeight'] += tag['adjustedWeight'] * 0.2
-                        if tag.get('isCore'):
-                            existing['isCore'] = True
-                        break
-
-                if not is_redundant:
-                    if not tag.get('name'):
-                        tag['name'] = data['name']
-                    deduplicated_tags.append(tag)
-
-            # Step 10: 构建上下文向量并融合
+            # Step 6: 构建上下文向量并融合
             context_vec = np.zeros(dim, dtype=np.float32)
             total_weight = 0
 
-            for t in deduplicated_tags:
+            for t in all_tags:
                 data = tag_data_map.get(t['id'])
                 if data and data.get('vector'):
                     v = np.array(json.loads(data['vector']), dtype=np.float32)
@@ -1378,11 +1004,7 @@ class VectorIndex:
             return TagBoostResult(
                 vector=fused.tolist(),
                 info={
-                    'coreTagsMatched': [
-                        t['name'] for t in deduplicated_tags
-                        if t.get('isCore') and t.get('name')
-                    ],
-                    'matchedTags': self._filter_matched_tags(deduplicated_tags, config),
+                    'matchedTags': effective_tag_boost,
                     'boostFactor': float(effective_tag_boost),
                     'epa': {
                         'logicDepth': float(logic_depth),
@@ -1395,7 +1017,7 @@ class VectorIndex:
 
         except Exception as e:
             logging.error(f"[VectorIndex] TagMemo V3 error: {e}, falling back to simple boost")
-            return self._apply_simple_tag_boost(vector, base_tag_boost, core_tags)
+            return {'vector': original_float32, 'info': None}
 
     def _ensure_float32(self, vector: Union[List[float], np.ndarray]) -> np.ndarray:
         """确保向量是 float32 类型"""
@@ -1405,100 +1027,10 @@ class VectorIndex:
             return vector.astype(np.float32)
         return vector
 
-    def _apply_simple_tag_boost(
-        self,
-        vector: List[float],
-        base_tag_boost: float,
-        core_tags: List[str]
-    ) -> TagBoostResult:
-        """
-        简化的 Tag 增强：仅基于核心标签的加权融合
-
-        Args:
-            vector: 原始查询向量
-            base_tag_boost: 增强因子 (0-1)
-            core_tags: 核心标签列表
-
-        Returns:
-            TagBoostResult 包含增强后的向量和标签信息
-        """
-        dim = len(vector)
-
-        try:
-            # 过滤有效的核心标签
-            safe_core_tags = [t for t in core_tags if isinstance(t, str)]
-            if not safe_core_tags:
-                return TagBoostResult(vector=vector, info=None)
-
-            # 从数据库查询标签向量
-            db: Session = SessionLocal()
-            try:
-                tag_rows = db.query(TagTable).filter(TagTable.name.in_(safe_core_tags)).all()
-            finally:
-                db.close()
-
-            if not tag_rows:
-                return TagBoostResult(vector=vector, info=None)
-
-            # 构建上下文向量
-            context_vec = [0.0] * dim
-            matched_tags = []
-
-            for row in tag_rows:
-                if row.vector:
-                    try:
-                        v = json.loads(row.vector)
-                        for d in range(dim):
-                            context_vec[d] += v[d]
-                        matched_tags.append(row.name)
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-
-            if not matched_tags:
-                return TagBoostResult(vector=vector, info=None)
-
-            # 归一化上下文向量
-            magnitude = sum(x * x for x in context_vec) ** 0.5
-            if magnitude > 1e-9:
-                context_vec = [x / magnitude for x in context_vec]
-            else:
-                # 计算平均值
-                for d in range(dim):
-                    context_vec[d] /= len(matched_tags)
-                magnitude = sum(x * x for x in context_vec) ** 0.5
-                if magnitude > 1e-9:
-                    context_vec = [x / magnitude for x in context_vec]
-
-            # 融合原始向量和上下文向量
-            fused = [
-                (1 - base_tag_boost) * vector[d] + base_tag_boost * context_vec[d]
-                for d in range(dim)
-            ]
-
-            # 归一化结果
-            magnitude = sum(x * x for x in fused) ** 0.5
-            if magnitude > 1e-9:
-                fused = [x / magnitude for x in fused]
-
-            return TagBoostResult(
-                vector=fused,
-                info={
-                    "matchedTags": matched_tags,
-                    "coreTagsMatched": matched_tags,
-                    "boostFactor": base_tag_boost
-                }
-            )
-
-        except Exception as e:
-            logging.error(f"[VectorIndex] Tag boost failed: {e}")
-            return TagBoostResult(vector=vector, info=None)
-
     def apply_tag_boost(
         self,
         vector: List[float],
         tag_boost: float,
-        core_tags: List[str],
-        core_boost_factor: float = 1.33
     ) -> TagBoostResult:
         """
         公共接口：应用 TagMemo V3 增强算法
@@ -1506,17 +1038,12 @@ class VectorIndex:
         Args:
             vector: 原始向量
             tag_boost: 增强因子 (0-1)
-            core_tags: 核心标签列表
-            core_boost_factor: 核心标签增强因子
 
         Returns:
             TagBoostResult 包含增强后的向量和调试信息
         """
-        if not self.epa or not self.residual_pyramid:
-            # 降级到简单增强
-            return self._apply_simple_tag_boost(vector, tag_boost, core_tags)
 
-        return self._apply_tag_memo_v3(vector, tag_boost, core_tags, core_boost_factor)
+        return self._apply_tag_memo_v3(vector, tag_boost)
 
     def get_epa_analysis(self, vector: Union[List[float], np.ndarray]) -> Dict[str, Any]:
         """
@@ -1549,75 +1076,6 @@ class VectorIndex:
             "resonance": resonance.get("resonance", 0.0),
             "dominant_axes": projection.get("dominant_axes", [])
         }
-
-    async def deduplicate_results(
-        self,
-        candidates: List[Union[SearchResult, Dict]],
-        query_vector: Union[List[float], np.ndarray]
-    ) -> List[Union[SearchResult, Dict]]:
-        """
-        Tagmemo V4: 对结果集进行智能去重 (SVD + Residual)
-
-        Args:
-            candidates: 候选结果数组
-            query_vector: 查询向量
-
-        Returns:
-            去重后的结果
-        """
-        if not self.result_deduplicator:
-            return candidates
-
-        # 确保 query_vector 是 numpy 数组
-        if isinstance(query_vector, list):
-            query_vector = np.array(query_vector, dtype=np.float32)
-        elif not isinstance(query_vector, np.ndarray):
-            query_vector = np.array(query_vector, dtype=np.float32)
-
-        # 将 SearchResult 转换为字典格式
-        candidate_dicts = []
-        for c in candidates:
-            if isinstance(c, dict):
-                candidate_dicts.append(c)
-            elif hasattr(c, "__dict__"):
-                candidate_dicts.append(c.__dict__)
-            elif hasattr(c, "_asdict"):
-                candidate_dicts.append(c._asdict())
-            else:
-                candidate_dicts.append(vars(c))
-
-        # 调用去重器
-        logging.debug(f"[VectorIndex] 🔄 Calling deduplicator with {len(candidate_dicts)} candidates...")
-        deduplicated = await self.result_deduplicator.deduplicate(
-            candidate_dicts,
-            query_vector
-        )
-        logging.info(f"[VectorIndex] ✅ Deduplication complete: {len(candidate_dicts)} → {len(deduplicated)} results")
-
-        # 将 dict 格式的结果转换回 SearchResult 对象
-        result_objects = []
-        for d in deduplicated:
-            if isinstance(d, dict):
-                # 检查是否是 SearchResult 的 dict
-                if 'text' in d and 'score' in d and 'source_file' in d:
-                    result_objects.append(SearchResult(
-                        text=d.get('text', ''),
-                        score=d.get('score', 0.0),
-                        source_file=d.get('source_file', ''),
-                        full_path=d.get('full_path', ''),
-                        updated_at=d.get('updated_at'),
-                        matched_tags=d.get('matched_tags', []),
-                        boost_factor=d.get('boost_factor', 0),
-                        core_tags_matched=d.get('core_tags_matched', [])
-                    ))
-                else:
-                    # 不是 SearchResult 格式，保持原样
-                    result_objects.append(d)
-            else:
-                # 已经是对象，保持原样
-                result_objects.append(d)
-
-        return result_objects
 
     # ==================== 3. 添加向量 ====================
     async def add_vector(self, diary_name: str, id: int, vector_buffer: bytes) -> None:
@@ -1659,7 +1117,7 @@ class VectorIndex:
             diary_name: 日记本名称
             vectors: 向量数组，每个元素为 (id, vec) 元组
         """
-        logging.info(f"[VectorIndex] ➕➕ Adding {len(vectors)} vectors to diary \"{diary_name}\"")
+        logging.info(f"[VectorIndex] Adding {len(vectors)} vectors to diary \"{diary_name}\"")
 
         idx = await self._get_or_load_diary_index(diary_name)
 
@@ -1695,10 +1153,6 @@ class VectorIndex:
 
         task = asyncio.create_task(save_task())
         self.save_tasks[diary_name] = task
-        logging.info(
-            f"[VectorIndex] ⏰ Scheduled save for \"{diary_name}\" "
-            f"in {self.config.index_save_delay}s"
-        )
 
     async def _save_index_to_disk(self, diary_name: str) -> None:
         """
@@ -1779,7 +1233,6 @@ class VectorIndex:
             db.close()
 
         # 缓存未命中，获取新向量
-        logging.warning(f"[VectorIndex] Cache MISS for diary name: \"{diary_name}\". Fetching now...")
         return await self._fetch_and_cache_diary_name_vector(diary_name)
 
     async def _fetch_and_cache_diary_name_vector(self, name: str) -> Optional[List[float]]:
@@ -1794,53 +1247,6 @@ class VectorIndex:
                     return vectors[0]
         except Exception as e:
             logging.error(f"[VectorIndex] Failed to vectorize diary name {name}: {e}")
-        return None
-
-    async def get_plugin_description_vector(
-        self,
-        desc_text: str,
-        get_embedding_fn: Optional[callable] = None
-    ) -> Optional[List[float]]:
-        """
-        获取插件描述的向量（带缓存）
-
-        Args:
-            desc_text: 描述文本
-            get_embedding_fn: 可选的自定义向量化函数
-
-        Returns:
-            向量列表或 None
-        """
-        try:
-            # 使用哈希作为缓存键
-            import hashlib as hl
-            hash_key = hl.sha256(desc_text.encode()).hexdigest()
-            cache_key = f"plugin_desc_hash:{hash_key}"
-
-            # 检查数据库缓存
-            db: Session = SessionLocal()
-            try:
-                entry = db.query(KVStoreTable).filter(KVStoreTable.key == cache_key).first()
-                if entry and entry.vector:
-                    return json.loads(entry.vector)
-            finally:
-                db.close()
-
-            # 缓存未命中，使用提供的函数或默认服务
-            if get_embedding_fn and callable(get_embedding_fn):
-                vector = await get_embedding_fn(desc_text)
-            else:
-                async with EmbeddingService() as embedding_service:
-                    vectors = await embedding_service.get_embeddings_batch([desc_text])
-                    vector = vectors[0] if vectors else None
-
-            if vector:
-                self._save_kv_store(cache_key, vector)
-                return vector
-
-        except Exception as e:
-            logging.error(f"[VectorIndex] Failed to get plugin description vector: {e}")
-
         return None
 
     def _save_kv_store(self, key: str, vector: List[float], value: Optional[str] = None) -> None:
@@ -1919,19 +1325,7 @@ class VectorIndex:
         Returns:
             清理后的文本
         """
-        # 移除装饰性 emoji
-        emoji_pattern = re.compile(
-            "["
-            "\U0001F600-\U0001F64F"  # emoticons
-            "\U0001F300-\U0001F5FF"  # symbols & pictographs
-            "\U0001F680-\U0001F6FF"  # transport & map symbols
-            "\U0001F1E0-\U0001F1FF"  # flags
-            "\U00002600-\U000026FF"  # misc symbols
-            "\U00002700-\U000027BF"  # dingbats
-            "]+",
-            flags=re.UNICODE
-        )
-        cleaned = emoji_pattern.sub(' ', text)
+        cleaned = text
         # 清理空白字符
         cleaned = re.sub(r'[ \t]+', ' ', cleaned)
         cleaned = re.sub(r' *\n *', '\n', cleaned)
@@ -2553,45 +1947,6 @@ class VectorIndex:
 
     # ==================== 原有辅助方法 ====================
 
-    def stats(self) -> Dict[str, Dict[str, int]]:
-        """
-        获取所有已加载索引的统计信息
-
-        Returns:
-            字典，key为日记本名称，value为统计信息字典
-        """
-        result = {}
-        for diary_name, idx in self.diary_indices.items():
-            stats_obj = idx.stats()
-            result[diary_name] = {
-                "totalVectors": stats_obj.total_vectors,
-                "dimensions": stats_obj.dimensions,
-                "capacity": stats_obj.capacity,
-                "memoryUsage": stats_obj.memory_usage,
-            }
-        return result
-
-    def get_stats(self, diary_name: str) -> Optional[Dict[str, int]]:
-        """
-        获取索引统计信息
-
-        Args:
-            diary_name: 日记本名称
-
-        Returns:
-            统计信息字典，如果索引不存在则返回None
-        """
-        idx = self.diary_indices.get(diary_name)
-        if idx is None:
-            return None
-        stats_obj = idx.stats()
-        return {
-            "totalVectors": stats_obj.total_vectors,
-            "dimensions": stats_obj.dimensions,
-            "capacity": stats_obj.capacity,
-            "memoryUsage": stats_obj.memory_usage,
-        }
-
     async def flush_all(self) -> None:
         """立即保存所有待保存的索引"""
         logging.info("[VectorIndex] 💾💾 Flushing all pending saves...")
@@ -2602,18 +1957,6 @@ class VectorIndex:
                 await self._save_index_to_disk(diary_name)
         logging.info("[VectorIndex] ✅ All indices saved.")
 
-    def get_index_path(self, diary_name: str) -> Path:
-        """
-        获取索引文件路径（供调试用）
-
-        Args:
-            diary_name: 日记本名称
-
-        Returns:
-            索引文件路径
-        """
-        safe_name = hashlib.md5(diary_name.encode()).hexdigest()
-        return self.config.store_path / f"index_diary_{safe_name}.usearch"
 
     async def _handle_delete(self, file_path: str) -> None:
         """

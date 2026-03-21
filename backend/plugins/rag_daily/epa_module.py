@@ -633,38 +633,6 @@ class EPAModule:
             "bridges": bridges,
         }
 
-    def export_state(self) -> Dict:
-        """
-        Export EPA state for caching.
-
-        Returns:
-            Dictionary with EPA state
-        """
-        state = {
-            "config": {
-                "max_basis_dim": self.config['max_basis_dim'],
-                "cluster_count": self.config['cluster_count'],
-                "dimension": self.config['dimension'],
-            }
-        }
-
-        if self.ortho_basis is not None:
-            state["basis"] = [
-                base64.b64encode(vec.tobytes()).decode('utf-8')
-                for vec in self.ortho_basis
-            ]
-
-        if self.basis_mean is not None:
-            state["mean"] = base64.b64encode(self.basis_mean.tobytes()).decode('utf-8')
-
-        if self.basis_energies is not None:
-            state["energies"] = self.basis_energies.tolist()
-
-        if self.basis_labels is not None:
-            state["labels"] = self.basis_labels
-
-        return state
-
     async def _save_to_cache(self) -> None:
         """
         将正交基、均值向量等数据序列化后保存到数据库缓存
