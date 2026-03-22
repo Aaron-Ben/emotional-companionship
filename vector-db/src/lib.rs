@@ -290,7 +290,7 @@ impl VexusIndex {
         if table_type == "tags" {
             sql = "SELECT id, vector FROM tags WHERE vector IS NOT NULL".to_string();
         } else if table_type == "chunks" && filter_diary_name.is_some() {
-            sql = "SELECT c.id, c.vector FROM chunks c JOIN files f ON c.file_id = f.id WHERE f.diary_name = ?1 AND c.vector IS NOT NULL".to_string();
+            sql = "SELECT c.id, c.vector FROM chunks c JOIN diary_files f ON c.file_id = f.id WHERE f.diary_name = ?1 AND c.vector IS NOT NULL".to_string();
         } else {
             return Ok(0);
         }

@@ -191,7 +191,7 @@ def handle_create(args):
 
         # 从 .character_meta.json 获取角色名称
         character_meta = get_character_metadata(character_id, characters_dir)
-        character_name = character_meta.get("name", character_id)
+        character_name = character_meta.get("name", character_id) if character_meta else character_id
 
         sanitized_name = sanitize_path_component(character_name)
 
@@ -298,7 +298,7 @@ def handle_update(args):
 
             # 获取角色名称
             character_meta = get_character_metadata(character_id, characters_dir)
-            character_name = character_meta.get("name", character_id)
+            character_name = character_meta.get("name", character_id) if character_meta else character_id
             sanitized_name = sanitize_path_component(character_name)
 
             # 优先搜索指定的角色名称目录

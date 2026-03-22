@@ -107,8 +107,9 @@ class VectorIndex:
     def __init__(self, config: VectorIndexConfig):
         self.config = config
         self.diary_indices: Dict[str, VexusIndex] = {}  # diaryName -> VexusIndex实例
-        self.tag_index: Optional[VexusIndex] = None     # 全局 Tag 索引
+        self.tag_indices: Dict[str, VexusIndex] = {}    # diaryName -> Tag索引实例（按日记本隔离）
         self.save_tasks: Dict[str, Optional[asyncio.Task]] = {}  # diaryName -> asyncio.Task
+        self.tag_save_tasks: Dict[str, Optional[asyncio.Task]] = {}  # diaryName -> asyncio.Task (tag索引保存任务)
         self.diary_name_vector_cache: Dict[str, List[float]] = {}  # 日记本名称向量缓存
 
         # 批处理队列
@@ -133,60 +134,100 @@ class VectorIndex:
             store_path.mkdir(parents=True, exist_ok=True)
             logging.info(f"[VectorIndex] Created store path: {store_path}")
 
-    async def _init_epa_module(self) -> None:
+    async def _init_epa_modules(self) -> None:
         """
-        初始化 EPA 模块
+        初始化 EPA 模块（按日记本隔离）
 
         EPA (Embedding Projection Analysis) 模块用于语义空间投影和跨域共振检测
         """
-        try:
-            logging.info("[VectorIndex] 🧠 Initializing EPA Module...")
+        logging.info("[VectorIndex] 🧠 EPA Modules will be initialized per diary")
+        self.epa_modules: Dict[str, EPAModule] = {}  # diary_name -> EPAModule
 
-            # 获取数据库连接（使用 SQLAlchemy）
+    async def _get_or_init_epa_module(self, diary_name: str) -> Optional[EPAModule]:
+        """
+        获取或初始化指定日记本的 EPA 模块
+
+        Args:
+            diary_name: 日记本名称
+
+        Returns:
+            EPAModule 实例
+        """
+        if diary_name in self.epa_modules and self.epa_modules[diary_name] and self.epa_modules[diary_name].initialized:
+            return self.epa_modules[diary_name]
+
+        try:
+            # 先获取 tag 索引
+            tag_index = await self._get_or_load_tag_index(diary_name)
+            if not tag_index:
+                logging.warning(f"[VectorIndex] ⚠️ No tag index for \"{diary_name}\", EPA initialization skipped")
+                return None
+
+            # 获取数据库连接
             db_path = str(self.config.store_path / "emotional_companionship.db")
             import sqlite3
-            # 修复: 允许跨线程使用连接 (EPA 模块需要在异步线程池中执行)
             db = sqlite3.connect(db_path, check_same_thread=False)
 
-            self.epa = EPAModule(
+            epa = EPAModule(
                 db=db,
                 config={
                     'dimension': self.config.dimension,
                     'max_basis_dim': 64,
                     'min_variance_ratio': 0.01,
                     'cluster_count': 32,
-                    'vexus_index': self.tag_index,
+                    'vexus_index': tag_index,
                 }
             )
 
-            # 初始化 EPA
-            success = await self.epa.initialize()
+            success = await epa.initialize(diary_name)
             if success:
-                logging.info("[VectorIndex] ✅ EPA Module initialized")
+                self.epa_modules[diary_name] = epa
+                logging.info(f"[VectorIndex] ✅ EPA Module initialized for \"{diary_name}\"")
+                return epa
             else:
-                logging.warning("[VectorIndex] ⚠️ EPA Module initialization failed, will use fallback")
-                self.epa = None
+                logging.warning(f"[VectorIndex] ⚠️ EPA Module failed for \"{diary_name}\"")
+                return None
 
         except Exception as e:
-            logging.error(f"[VectorIndex] ❌ EPA Module initialization error: {e}")
-            self.epa = None
+            logging.error(f"[VectorIndex] ❌ EPA Module error for \"{diary_name}\": {e}")
+            return None
 
-    async def _init_residual_pyramid(self) -> None:
+    async def _init_residual_pyramids(self) -> None:
         """
-        初始化残差金字塔模块
+        初始化残差金字塔模块（按日记本隔离）
 
         残差金字塔用于多级语义残差分析和特征提取
         """
+        logging.info("[VectorIndex] 🔺 Residual Pyramid Modules will be initialized per diary")
+        self.residual_pyramids: Dict[str, ResidualPyramid] = {}  # diary_name -> ResidualPyramid
+
+    async def _get_or_init_residual_pyramid(self, diary_name: str) -> Optional[ResidualPyramid]:
+        """
+        获取或初始化指定日记本的残差金字塔模块
+
+        Args:
+            diary_name: 日记本名称
+
+        Returns:
+            ResidualPyramid 实例
+        """
+        if diary_name in self.residual_pyramids and self.residual_pyramids[diary_name]:
+            return self.residual_pyramids[diary_name]
+
         try:
-            logging.info("[VectorIndex] 🔺 Initializing Residual Pyramid Module...")
+            # 先获取 tag 索引
+            tag_index = await self._get_or_load_tag_index(diary_name)
+            if not tag_index:
+                logging.warning(f"[VectorIndex] ⚠️ No tag index for \"{diary_name}\", ResidualPyramid initialization skipped")
+                return None
 
             # 获取数据库连接
             db_path = str(self.config.store_path / "emotional_companionship.db")
             import sqlite3
             db = sqlite3.connect(db_path)
 
-            self.residual_pyramid = ResidualPyramid(
-                tag_index=self.tag_index,
+            pyramid = ResidualPyramid(
+                tag_index=tag_index,
                 db=db,
                 config={
                     'dimension': self.config.dimension,
@@ -196,11 +237,13 @@ class VectorIndex:
                 }
             )
 
-            logging.info("[VectorIndex] ✅ Residual Pyramid Module initialized")
+            self.residual_pyramids[diary_name] = pyramid
+            logging.info(f"[VectorIndex] ✅ Residual Pyramid initialized for \"{diary_name}\"")
+            return pyramid
 
         except Exception as e:
-            logging.error(f"[VectorIndex] ❌ Residual Pyramid initialization error: {e}")
-            self.residual_pyramid = None
+            logging.error(f"[VectorIndex] ❌ Residual Pyramid error for \"{diary_name}\": {e}")
+            return None
 
     async def _build_cooccurrence_matrix(self) -> None:
         """
@@ -316,8 +359,8 @@ class VectorIndex:
         # 保存事件循环引用（用于监视器回调）
         self.event_loop = asyncio.get_running_loop()
 
-        # 1. 初始化全局 Tag 索引
-        await self._init_tag_index()
+        # 1. 初始化日记本 Tag 索引（按日记本隔离）
+        await self._init_tag_indices()
 
         # 2. 预热日记本名称向量缓存
         self._hydrate_diary_name_cache()
@@ -329,39 +372,99 @@ class VectorIndex:
         # 4. 构建 Tag 共现矩阵
         await self._build_cooccurrence_matrix()
 
-        # 5. 初始化 EPA 模块
-        await self._init_epa_module()
+        # 5. 初始化 EPA 模块（按日记本隔离）
+        await self._init_epa_modules()
 
-        # 6. 初始化残差金字塔
-        await self._init_residual_pyramid()
+        # 6. 初始化残差金字塔（按日记本隔离）
+        await self._init_residual_pyramids()
 
         logging.info("[VectorIndex] ✅ System Ready")
 
-    async def _init_tag_index(self) -> None:
-        """初始化全局 Tag 索引"""
-        tag_idx_path = self.config.store_path / "index_global_tags.usearch"
+    async def _init_tag_indices(self) -> None:
+        """初始化所有日记本的 Tag 索引（懒加载模式）"""
+        logging.info("[VectorIndex] 📂 Tag indices will be loaded lazily per diary")
+        # Tag 索引采用懒加载策略，在首次使用时才加载
+
+    async def _get_or_load_tag_index(self, diary_name: str) -> Optional[VexusIndex]:
+        """
+        获取或加载指定日记本的 Tag 索引（懒加载）
+
+        Args:
+            diary_name: 日记本名称，如 "反思簇"
+
+        Returns:
+            Tag 索引实例，如果该日记本没有标签则返回 None
+        """
+        # 如果已加载，直接返回
+        if diary_name in self.tag_indices:
+            return self.tag_indices[diary_name]
+
+        logging.info(f"[VectorIndex] 🔍 Lazy loading tag index for diary: \"{diary_name}\"")
+
+        # 计算文件名：index_tags_{MD5}.usearch
+        safe_name = hashlib.md5(diary_name.encode()).hexdigest()
+        idx_path = self.config.store_path / f"index_tags_{safe_name}.usearch"
 
         try:
-            if tag_idx_path.exists():
-                logging.info("[VectorIndex] 📂 Loading existing Tag index...")
-                self.tag_index = VexusIndex.load(
+            if idx_path.exists():
+                idx = VexusIndex.load(
                     self.config.dimension,
                     self.config.capacity,
-                    str(tag_idx_path)
+                    str(idx_path)
                 )
-                logging.info("[VectorIndex] ✅ Tag index loaded from disk")
+                self.tag_indices[diary_name] = idx
+                logging.info(f"[VectorIndex] ✅ Tag index loaded for \"{diary_name}\"")
+                return idx
             else:
-                logging.info("[VectorIndex] ✨ Creating new Tag index...")
-                self.tag_index = VexusIndex(self.config.dimension, self.config.capacity)
-                # 🌟 后台异步恢复标签：不阻塞 initialize() 返回
-                # 使用 create_task 将恢复任务推迟到后台执行
-                asyncio.create_task(self._recover_tags_from_db())
+                # 创建新索引并从数据库恢复
+                idx = VexusIndex(self.config.dimension, self.config.capacity)
+                await self._recover_tags_for_diary(idx, diary_name)
+                self.tag_indices[diary_name] = idx
+                return idx
         except Exception as e:
-            logging.error(f"[VectorIndex] ❌ Tag index load failed: {e}")
-            logging.warning("[VectorIndex] 🔄 Creating new Tag index as fallback...")
-            self.tag_index = VexusIndex(self.config.dimension, self.config.capacity)
-            # 即使在 fallback 情况下，也在后台恢复
-            asyncio.create_task(self._recover_tags_from_db())
+            logging.error(f"[VectorIndex] ❌ Tag index load failed for \"{diary_name}\": {e}")
+            idx = VexusIndex(self.config.dimension, self.config.capacity)
+            await self._recover_tags_for_diary(idx, diary_name)
+            self.tag_indices[diary_name] = idx
+            return idx
+
+    async def _recover_tags_for_diary(self, idx: VexusIndex, diary_name: str) -> None:
+        """
+        从数据库恢复指定日记本的标签到索引
+
+        Args:
+            idx: 索引实例
+            diary_name: 日记本名称
+        """
+        import json
+        import struct
+
+        logging.info(f"[VectorIndex] 🔄 Recovering tags for \"{diary_name}\"...")
+        try:
+            # 使用 Python 手动从数据库读取并添加到索引
+            # 因为 Rust 的 recover_from_sqlite 对 tags 表不支持按 diary 过滤
+            db = SessionLocal()
+            from app.models.database import TagTable, FileTagTable, DiaryFileTable
+
+            tags = db.query(TagTable).join(FileTagTable).join(DiaryFileTable).filter(
+                DiaryFileTable.diary_name == diary_name
+            ).distinct().all()
+
+            count = 0
+            for tag in tags:
+                if tag.vector:
+                    try:
+                        vec = json.loads(tag.vector)
+                        vec_bytes = struct.pack(f'{len(vec)}f', *vec)
+                        idx.add(tag.id, vec_bytes)
+                        count += 1
+                    except Exception as e:
+                        logging.warning(f"[VectorIndex] ⚠️ Failed to add tag {tag.name}: {e}")
+
+            db.close()
+            logging.info(f"[VectorIndex] ✅ Recovered {count} tags for \"{diary_name}\"")
+        except Exception as e:
+            logging.error(f"[VectorIndex] ❌ Tag recovery failed for \"{diary_name}\": {e}")
 
     def _start_watcher(self) -> None:
         """启动文件监视器"""
@@ -491,8 +594,10 @@ class VectorIndex:
                     str(idx_path)
                 )
             else:
-                logging.info(f"[VectorIndex] Index file not found for {file_name}, creating a new empty one.")
+                # 索引文件不存在，需要从数据库恢复
+                logging.info(f"[VectorIndex] Index file not found for {file_name}, creating and recovering from DB...")
                 idx = VexusIndex(self.config.dimension, self.config.capacity)
+                await self._recover_from_database(idx, table_type, filter_diary_name)
         except Exception as e:
             logging.error(f"[VectorIndex] Index load error ({file_name}): {e}")
             logging.warning(f"[VectorIndex] Rebuilding index {file_name} from DB as a fallback...")
@@ -508,40 +613,61 @@ class VectorIndex:
         diary_name: str
     ) -> None:
         """
-        从数据库恢复向量数据到索引（使用 Rust 高性能恢复）
+        从数据库恢复向量数据到索引（优先使用 Rust，失败则用 Python 手动恢复）
 
         Args:
             idx: 索引实例
+            table_type: 表类型 ("chunks" 或 "tags")
             diary_name: 日记本名称
         """
-        logging.info(f"[VectorIndex] 🔄 Recovering chunks for \"{diary_name}\" via Rust...")
+        import json
+        import struct
+
+        logging.info(f"[VectorIndex] 🔄 Recovering {table_type} for \"{diary_name}\" via Rust...")
         try:
             db_path = self.config.store_path / "emotional_companionship.db"
             count = idx.recover_from_sqlite(str(db_path), table_type, diary_name)
             logging.info(f"[VectorIndex] ✅ Recovered {count} vectors via Rust")
 
             # 如果 Rust 恢复返回 0 条，尝试手动恢复
-            if count == 0 and table_type == "chunks":
+            if count == 0:
                 logging.warning(f"[VectorIndex] ⚠️ Rust recovery returned 0 vectors, trying manual recovery...")
+                await self._manual_recover_chunks(idx, diary_name)
+                return
         except Exception as e:
-            logging.error(f"[VectorIndex] ❌ Rust recovery failed: {e}")
+            logging.error(f"[VectorIndex] ❌ Rust recovery failed: {e}, trying manual recovery...")
+            await self._manual_recover_chunks(idx, diary_name)
 
-    async def _recover_tags_from_db(self) -> None:
-        """
-        从数据库恢复标签到索引（使用 Rust 高性能恢复）
+    async def _manual_recover_chunks(self, idx: VexusIndex, diary_name: str) -> None:
+        """手动从数据库恢复 chunks（Python 实现）"""
+        import json
+        import struct
+        from app.models.database import SessionLocal, ChunkTable, DiaryFileTable
 
-        ⚠️ 注意：此方法应该在后台任务中调用，使用 asyncio.create_task()
-        这样可以确保 initialize() 函数能够快速返回
-        """
-        logging.info("[VectorIndex] 🚀 Starting background recovery of tag index via Rust...")
+        logging.info(f"[VectorIndex] 🔄 Manual recovering chunks for \"{diary_name}\"...")
+        db = SessionLocal()
+
         try:
-            db_path = self.config.store_path / "emotional_companionship.db"
-            count = self.tag_index.recover_from_sqlite(str(db_path), "tags", None)
-            logging.info(f"[VectorIndex] ✅ Background tag recovery complete. {count} vectors indexed via Rust.")
-            # 恢复完成后，保存一次索引以备下次直接加载
-            await self._save_index_to_disk("global_tags")
+            chunks = db.query(ChunkTable).join(DiaryFileTable).filter(
+                DiaryFileTable.diary_name == diary_name
+            ).all()
+
+            count = 0
+            for chunk in chunks:
+                if chunk.vector:
+                    try:
+                        vec = json.loads(chunk.vector)
+                        vec_bytes = struct.pack(f'{len(vec)}f', *vec)
+                        idx.add(chunk.id, vec_bytes)
+                        count += 1
+                    except Exception as e:
+                        logging.warning(f"[VectorIndex] ⚠️ Failed to add chunk {chunk.id}: {e}")
+
+            logging.info(f"[VectorIndex] ✅ Manual recovered {count} chunks for \"{diary_name}\"")
         except Exception as e:
-            logging.error("[VectorIndex] ❌ Background tag recovery failed:", e)
+            logging.error(f"[VectorIndex] ❌ Manual recovery failed: {e}")
+        finally:
+            db.close()
 
 
     # ==================== 核心搜索接口 ====================
@@ -635,7 +761,7 @@ class VectorIndex:
 
         if tag_boost > 0:
             logging.info(f"[VectorIndex] ✅ TagBoost 已启用，开始增强向量 (diary={diary_name})...")
-            boost_result = self.apply_tag_boost(vector, tag_boost, diary_name)
+            boost_result = await self.apply_tag_boost(vector, tag_boost, diary_name)
             search_vec = boost_result.vector
             tag_info = boost_result.info
         else:
@@ -679,24 +805,26 @@ class VectorIndex:
                         source_file=Path(chunk.file.path).name,
                         full_path=chunk.file.path,
                         updated_at=chunk.file.updated_at,
-                        matched_tags=tag_info.matched_tags if tag_info else [],
-                        boost_factor=tag_info.boost_factor if tag_info else 0,
+                        matched_tags=tag_info.get('matched_tags', []) if tag_info else [],
+                        boost_factor=tag_info.get('boost_factor', 0) if tag_info else 0,
                     ))
             return search_results
         finally:
             db.close()
 
     # ==================== TagMemo 核心增强算法 ====================
-    def _apply_tag_memo_v3(
+    async def _apply_tag_memo_v3(
         self,
         vector: Union[List[float], np.ndarray],
         base_tag_boost: float,
+        diary_name: Optional[str] = None,
     ) -> TagBoostResult:
         """
         EPA、残差金字塔、共现矩阵等多种技术进行智能语义增强
         Args:
             vector: 原始查询向量
             base_tag_boost: 基础增强因子 (0-1)
+            diary_name: 日记本名称（用于获取对应的 EPA 和残差金字塔模块）
 
         Returns:
             TagBoostResult 包含增强后的向量和调试信息
@@ -708,18 +836,47 @@ class VectorIndex:
             # 获取配置
             config = self.rag_params.get('VectorIndex', {})
 
+            # 获取或初始化对应日记本的 EPA 和残差金字塔模块
+            epa = await self._get_or_init_epa_module(diary_name) if diary_name else None
+            residual_pyramid = await self._get_or_init_residual_pyramid(diary_name) if diary_name else None
+
             # Step 1: EPA 分析
-            epa_result = self.epa.project(original_float32)
-            resonance = self.epa.detect_cross_domain_resonance(original_float32)
+            if epa and epa.initialized:
+                epa_result = epa.project(original_float32)
+                resonance = epa.detect_cross_domain_resonance(original_float32)
+            else:
+                # Fallback: 使用默认空结果
+                epa_result = {
+                    "projections": None,
+                    "probabilities": None,
+                    "entropy": 1.0,
+                    "logic_depth": 0.0,
+                    "dominant_axes": []
+                }
+                resonance = {"resonance": 0.0, "bridges": []}
+
             query_world = (
                 epa_result['dominant_axes'][0]['label']
                 if epa_result['dominant_axes']
                 else 'Unknown'
             )
 
+            logging.info("当前所处的世界：" + query_world)
+
             # Step 2: 残差金字塔分析
-            pyramid = self.residual_pyramid.analyze(original_float32)
-            features = pyramid['features']
+            if residual_pyramid:
+                pyramid = residual_pyramid.analyze(original_float32)
+                features = pyramid['features']
+            else:
+                # Fallback: 使用默认空结果
+                features = {
+                    "depth": 0,
+                    "coverage": 0.0,
+                    "novelty": 1.0,
+                    "coherence": 0.0,
+                    "tag_memo_activation": 0.0,
+                    "expansion_signal": 1.0,
+                }
 
             # Step 3: 动态调整策略
             logic_depth = epa_result['logic_depth']
@@ -804,7 +961,13 @@ class VectorIndex:
             for t in all_tags:
                 data = tag_data_map.get(t['id'])
                 if data and data.get('vector'):
-                    v = np.array(json.loads(data['vector']), dtype=np.float32)
+                    vec_data = data['vector']
+                    # 处理可能的多种格式：JSON 字符串、bytes 或 list
+                    if isinstance(vec_data, bytes):
+                        vec_data = vec_data.decode('utf-8')
+                    if isinstance(vec_data, str):
+                        vec_data = json.loads(vec_data)
+                    v = np.array(vec_data, dtype=np.float32)
                     context_vec += v * t['adjustedWeight']
                     total_weight += t['adjustedWeight']
 
@@ -840,7 +1003,7 @@ class VectorIndex:
 
         except Exception as e:
             logging.error(f"[VectorIndex] TagMemo V3 error: {e}, falling back to simple boost")
-            return {'vector': original_float32, 'info': None}
+            return TagBoostResult(vector=original_float32.tolist(), info=None)
 
     def _ensure_float32(self, vector: Union[List[float], np.ndarray]) -> np.ndarray:
         """确保向量是 float32 类型"""
@@ -850,10 +1013,11 @@ class VectorIndex:
             return vector.astype(np.float32)
         return vector
 
-    def apply_tag_boost(
+    async def apply_tag_boost(
         self,
         vector: List[float],
         tag_boost: float,
+        diary_name: Optional[str] = None,
     ) -> TagBoostResult:
         """
         公共接口：应用 TagMemo V3 增强算法
@@ -861,12 +1025,13 @@ class VectorIndex:
         Args:
             vector: 原始向量
             tag_boost: 增强因子 (0-1)
+            diary_name: 日记本名称（用于获取对应的 tag 索引和模块）
 
         Returns:
             TagBoostResult 包含增强后的向量和调试信息
         """
 
-        return self._apply_tag_memo_v3(vector, tag_boost)
+        return await self._apply_tag_memo_v3(vector, tag_boost, diary_name)
 
     def get_epa_analysis(self, vector: Union[List[float], np.ndarray]) -> Dict[str, Any]:
         """
@@ -977,18 +1142,25 @@ class VectorIndex:
         task = asyncio.create_task(save_task())
         self.save_tasks[diary_name] = task
 
-    async def _save_index_to_disk(self, diary_name: str) -> None:
+    async def _save_index_to_disk(self, diary_name: str, is_tag_index: bool = False) -> None:
         """
         立即保存索引到磁盘
 
         Args:
-            diary_name: 日记本名称或 'global_tags'
+            diary_name: 日记本名称
+            is_tag_index: 是否为 tag 索引
         """
         try:
-            if diary_name == 'global_tags':
-                # 保存全局标签索引
-                file_path = self.config.store_path / 'index_global_tags.usearch'
-                self.tag_index.save(str(file_path))
+            if is_tag_index:
+                # 保存标签索引
+                safe_name = hashlib.md5(diary_name.encode()).hexdigest()
+                idx = self.tag_indices.get(diary_name)
+                if idx is None:
+                    logging.warning(f"[VectorIndex] ⚠️ No tag index found for \"{diary_name}\", skipping save.")
+                    return
+                file_path = self.config.store_path / f"index_tags_{safe_name}.usearch"
+                idx.save(str(file_path))
+                logging.info(f"[VectorIndex] 💾 Saved tag index: {diary_name}")
             else:
                 # 保存日记索引
                 safe_name = hashlib.md5(diary_name.encode()).hexdigest()
@@ -1448,26 +1620,40 @@ class VectorIndex:
 
                 self._schedule_index_save(diary_name)
 
-            # 处理 Tag 索引更新
-            if tag_cache and self.tag_index:
-                try:
-                    logging.info(f"[VectorIndex] 🏷️ Building tag index for {len(tag_cache)} tags...")
-                    # 添加新标签到 tag_index
-                    for tag, tag_data in tag_cache.items():
-                        if tag_data and "vector" in tag_data:
-                            vector_bytes = self._serialize_vector(tag_data["vector"])
-                            try:
-                                self.tag_index.add(tag_data["id"], vector_bytes)
-                            except Exception as e:
-                                if "Duplicate" in str(e):
-                                    if hasattr(self.tag_index, "remove"):
-                                        self.tag_index.remove(tag_data["id"])
-                                    self.tag_index.add(tag_data["id"], vector_bytes)
-                    # 安排保存 Tag 索引
-                    self._schedule_tag_index_save()
-                    logging.info(f"[VectorIndex] ✅ Tag index updated with {len(tag_cache)} tags")
-                except Exception as e:
-                    logging.error(f"[VectorIndex] ❌ Failed to update tag index: {e}")
+            # 处理 Tag 索引更新（按日记本分组）
+            tag_updates_by_diary: Dict[str, Dict] = {}
+            for file_info in files_to_process:
+                diary_name = file_info["diary_name"]
+                if diary_name not in tag_updates_by_diary:
+                    tag_updates_by_diary[diary_name] = {}
+                # 只将当前文件相关的 tag 添加到对应日记本
+                tags = self.extract_tags(file_info["content"])
+                for tag in tags:
+                    if tag in tag_cache:
+                        tag_data = tag_cache[tag]
+                        tag_updates_by_diary[diary_name][tag] = tag_data
+
+            for diary_name, diary_tag_cache in tag_updates_by_diary.items():
+                if diary_tag_cache:
+                    try:
+                        tag_index = await self._get_or_load_tag_index(diary_name)
+                        if tag_index:
+                            logging.info(f"[VectorIndex] 🏷️ Building tag index for \"{diary_name}\" with {len(diary_tag_cache)} tags...")
+                            for tag, tag_data in diary_tag_cache.items():
+                                if tag_data and "vector" in tag_data:
+                                    vector_bytes = self._serialize_vector(tag_data["vector"])
+                                    try:
+                                        tag_index.add(tag_data["id"], vector_bytes)
+                                    except Exception as e:
+                                        if "Duplicate" in str(e):
+                                            if hasattr(tag_index, "remove"):
+                                                tag_index.remove(tag_data["id"])
+                                            tag_index.add(tag_data["id"], vector_bytes)
+                            # 安排保存 Tag 索引
+                            self._schedule_tag_index_save(diary_name)
+                            logging.info(f"[VectorIndex] ✅ Tag index updated for \"{diary_name}\" with {len(diary_tag_cache)} tags")
+                    except Exception as e:
+                        logging.error(f"[VectorIndex] ❌ Failed to update tag index for \"{diary_name}\": {e}")
 
             # 清理已处理的文件
             for key in batch_keys:
@@ -1558,7 +1744,8 @@ class VectorIndex:
         self,
         db: Session,
         file_id: int,
-        tags: List[str]
+        tags: List[str],
+        diary_name: str,
     ) -> None:
         """
         处理文件标签：保存标签到数据库并更新索引
@@ -1601,16 +1788,17 @@ class VectorIndex:
                         db.flush()
                         tag_cache[tag] = new_tag.id
 
-                        # 添加到全局 Tag 索引
-                        if self.tag_index:
+                        # 添加到对应日记本的 Tag 索引
+                        tag_index = await self._get_or_load_tag_index(diary_name)
+                        if tag_index:
                             vector_bytes = self._serialize_vector(vector)
                             try:
-                                self.tag_index.add(new_tag.id, vector_bytes)
+                                tag_index.add(new_tag.id, vector_bytes)
                             except Exception as e:
                                 if "Duplicate" in str(e):
-                                    if hasattr(self.tag_index, "remove"):
-                                        self.tag_index.remove(new_tag.id)
-                                    self.tag_index.add(new_tag.id, vector_bytes)
+                                    if hasattr(tag_index, "remove"):
+                                        tag_index.remove(new_tag.id)
+                                    tag_index.add(new_tag.id, vector_bytes)
             except Exception as e:
                 logging.error(f"[VectorIndex] Failed to vectorize tags: {e}")
 
@@ -1621,20 +1809,20 @@ class VectorIndex:
                 db.add(association)
 
         # 安排保存 Tag 索引
-        self._schedule_tag_index_save()
+        self._schedule_tag_index_save(diary_name)
 
-    def _schedule_tag_index_save(self) -> None:
-        """安排 Tag 索引延迟保存"""
-        if "global_tags" in self.save_tasks and self.save_tasks["global_tags"] is not None:
-            self.save_tasks["global_tags"].cancel()
+    def _schedule_tag_index_save(self, diary_name: str) -> None:
+        """安排指定日记本的 Tag 索引延迟保存"""
+        if diary_name in self.tag_save_tasks and self.tag_save_tasks[diary_name] is not None:
+            self.tag_save_tasks[diary_name].cancel()
 
         async def save_task():
             await asyncio.sleep(self.config.tag_index_save_delay)
-            await self._save_index_to_disk()
-            self.save_tasks["global_tags"] = None
+            await self._save_index_to_disk(diary_name, is_tag_index=True)
+            self.tag_save_tasks[diary_name] = None
 
         task = asyncio.create_task(save_task())
-        self.save_tasks["global_tags"] = task
+        self.tag_save_tasks[diary_name] = task
 
     def _get_diary_dir(self, name: str) -> Path:
         """
@@ -1744,6 +1932,7 @@ async def sync_all_diaries_to_vector_index() -> Dict[str, int]:
         # 初始化向量索引
         config = VectorIndexConfig()
         vector_index = VectorIndex(config)
+        await vector_index.initialize()
         logger.info("✅ VectorIndex 初始化成功")
 
         # 获取所有角色

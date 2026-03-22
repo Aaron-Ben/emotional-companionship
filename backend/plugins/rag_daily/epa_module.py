@@ -87,36 +87,36 @@ class EPAModule:
         # Basis labels
         self.basis_labels: Optional[List[str]] = None
 
+        # Basis cluster tags: 每个 basis 包含的实际 tags
+        self.basis_cluster_tags: Optional[List[List[str]]] = None
+
         # Initialization flag
         self.initialized: bool = False
 
 
-    async def initialize(self) -> bool:
+    async def initialize(self, diary_name: str) -> bool:
         """
         Initialize EPA basis vectors from tags or cached storage.
 
         Args:
-            tags_vectors: Optional list of tag vectors to compute basis from
-            tag_names: Optional list of tag names corresponding to vectors
-            kv_store_get_func: Optional function to retrieve cached basis from KV store
-            kv_store_set_func: Optional function to save computed basis to KV store
+            diary_name: 日记本名称，用于过滤该日记本下的标签
         """
-        logger.info("[EPA] 🧠 Initializing orthogonal basis (Weighted PCA)...")
+        logger.info(f"[EPA] 🧠 Initializing orthogonal basis for '{diary_name}'...")
 
         try:
-            # 缓存功能已禁用 - 直接从数据库加载
-            # # 尝试从缓存加载
-            # if await self._load_from_cache():
-            #     logger.info('[EPA] 💾 Loaded basis from cache.')
-            #     self.initialized = True
-            #     return True
 
-            # 从数据库获取标签数据
-            # 注意：这里需要根据你的数据库类型调整查询方式
-            # 如果使用 sqlite3，需要同步执行，或者使用 aiosqlite
+            # 从数据库获取标签数据（仅获取指定日记本的标签）
+            # 通过 file_tags 和 diary_files 关联，按日记本名称过滤
             try:
                 tags = self.db.execute(
-                    "SELECT id, name, vector FROM tags WHERE vector IS NOT NULL"
+                    """
+                    SELECT DISTINCT t.id, t.name, t.vector
+                    FROM tags t
+                    JOIN file_tags ft ON t.id = ft.tag_id
+                    JOIN diary_files f ON ft.file_id = f.id
+                    WHERE f.diary_name = ? AND t.vector IS NOT NULL
+                    """,
+                    (diary_name,)
                 ).fetchall()
             except Exception as db_err:
                 # 表不存在或其他数据库错误
@@ -171,10 +171,11 @@ class EPAModule:
             self.basis_energies = S[:K]
             self.basis_mean = mean_vector
             self.basis_labels = labels[:K] if labels is not None else cluster_data['labels'][:K]
+            self.basis_cluster_tags = cluster_data.get('cluster_tags', [])[:K]
 
-            # 缓存功能已禁用
-            # # 保存到缓存
-            # await self._save_to_cache()
+            # 打印每个 basis 包含的 tags
+            for i, (label, tags) in enumerate(zip(self.basis_labels, self.basis_cluster_tags)):
+                logger.info(f"[EPA] 📦 Basis {i} ({label}): {tags[:10]}{'...' if len(tags) > 10 else ''}")
 
             self.initialized = True
             return True
@@ -257,6 +258,14 @@ class EPAModule:
                 logger.debug(f"[EPA] K-Means converged at iter {iteration}")
                 break
 
+        # 收集每个聚类包含的 tags
+        cluster_tags = [[] for _ in range(k)]
+        for i, tag in enumerate(tags):
+            # 重新计算该 tag 属于哪个聚类
+            sims = np.dot(centroids, tags_array[i])
+            best_cluster = np.argmax(sims)
+            cluster_tags[best_cluster].append(tag_names[i])
+
         # Name clusters by finding closest tag
         labels = []
         for centroid in centroids:
@@ -275,6 +284,7 @@ class EPAModule:
             "vectors": centroids,
             "labels": labels,
             "weights": cluster_sizes,
+            "cluster_tags": cluster_tags,
         }
 
     def _compute_weighted_pca(self, cluster_data: Dict) -> Dict:
@@ -554,7 +564,7 @@ class EPAModule:
         # Extract dominant axes
         dominant_axes = []
         for k in range(K):
-            if probabilities[k] > 0.05:  # Threshold lowered for centered data
+            if probabilities[k] > 0.1:  # 能量占比 > 10%
                 dominant_axes.append({
                     "index": k,
                     "label": self.basis_labels[k] if self.basis_labels else f"axis_{k}",
@@ -564,10 +574,16 @@ class EPAModule:
 
         dominant_axes.sort(key=lambda x: x["energy"], reverse=True)
 
-        # 打印 basisLabels 和 basisEnergies
-        logger.info(f"[EPA] 📋 语义坐标标签: {self.basis_labels}")
-        if self.basis_energies is not None:
-            logger.info(f"[EPA] ⚡ 语义坐标重要性: {self.basis_energies.tolist()}")
+        semantic_coords = [f"{p:.4f}" for p in projections]
+        logger.info(f"[EPA] 语义轴投影: [{', '.join(semantic_coords)}]")
+        semantic_strength = 1.0 - normalized_entropy
+        logger.info(f"[EPA] 强度: {semantic_strength:.4f} (entropy: {normalized_entropy:.4f}, logicDepth: {semantic_strength:.4f})")
+        logger.info(f"[EPA] {K}个语义轴: {', '.join(self.basis_labels) if self.basis_labels else 'N/A'}")
+
+        # 打印主导轴
+        if dominant_axes:
+            dominant_str = ", ".join([f"{ax['label']}({ax['energy']*100:.1f}%)" for ax in dominant_axes])
+            logger.info(f"[EPA] 🔥 主导轴: {dominant_str}")
 
         return {
             "projections": projections,

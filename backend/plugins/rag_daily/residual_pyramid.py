@@ -473,13 +473,22 @@ class ResidualPyramid:
 
     def _flatten_tag_vectors(self, tags: List[Dict]) -> bytes:
         """Flatten tag vectors into a single bytes buffer for Rust."""
+        import json
+
         dim = self._dim
         n = len(tags)
         flattened = np.zeros(n * dim, dtype=np.float32)
 
         for i, tag in enumerate(tags):
             vec_bytes = tag["vector"]
-            vec = np.frombuffer(vec_bytes, dtype=np.float32)
+
+            # Handle both string (JSON) and bytes formats
+            if isinstance(vec_bytes, str):
+                # JSON string format stored in database
+                vec = np.array(json.loads(vec_bytes), dtype=np.float32)
+            else:
+                # Native bytes format
+                vec = np.frombuffer(vec_bytes, dtype=np.float32)
             if len(vec) != dim:
                 if len(vec) < dim:
                     padded = np.zeros(dim, dtype=np.float32)
