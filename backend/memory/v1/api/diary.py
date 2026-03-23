@@ -1,6 +1,6 @@
-"""Diary API endpoints for managing character diary entries.
+"""V1 日记 API
 
-Diaries are stored in data/daily/{name}/
+从 app/api/v1/diary.py 迁移
 """
 
 import logging
@@ -8,13 +8,12 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel, Field
 
-from app.services.diary.file_service import DiaryFileService
+from memory.v1.services.diary import DiaryFileService
 from app.models.diary import DiaryEntry
 from memory.v1.plugin_manager import plugin_manager
 
 
 logger = logging.getLogger(__name__)
-
 
 # Create router
 router = APIRouter(prefix="/api/v1/diary", tags=["diary"])
@@ -53,13 +52,7 @@ async def list_diaries(
     limit: int = 10,
     diary_service: DiaryFileService = Depends(get_diary_file_service)
 ):
-    """
-    获取指定角色的日记列表
-
-    Query Parameters:
-    - character_id: 角色 ID
-    - limit: 返回数量限制 (default: 10)
-    """
+    """获取指定角色的日记列表"""
     try:
         diaries = diary_service.list_diaries(character_id=character_id, limit=limit)
         return [DiaryEntry(**d) for d in diaries]
@@ -84,12 +77,7 @@ async def get_latest_diary(
     character_id: str,
     diary_service: DiaryFileService = Depends(get_diary_file_service)
 ):
-    """
-    获取指定角色最新的日记
-
-    Query Parameters:
-    - character_id: 角色 ID
-    """
+    """获取指定角色最新的日记"""
     try:
         diaries = diary_service.list_diaries(character_id=character_id, limit=1)
         if not diaries:
@@ -123,12 +111,7 @@ async def get_diary_by_path(
     path: str,
     diary_service: DiaryFileService = Depends(get_diary_file_service)
 ):
-    """
-    根据路径获取日记详情
-
-    Path Parameters:
-    - path: 文件相对路径 (例如: {name}/2025-01-23-14_30_52.txt)
-    """
+    """根据路径获取日记详情"""
     try:
         diary = diary_service.read_diary(path)
         if not diary:
@@ -146,47 +129,29 @@ async def create_diary(
     background_tasks: BackgroundTasks,
     diary_service: DiaryFileService = Depends(get_diary_file_service)
 ):
-    """
-    AI创建日记（通过 DailyNote 插件）
-
-    Request Body:
-    ```json
-    {
-        "character_id": "550e8400-e29b-41d4-a716-446655440000",
-        "date": "2025-01-23",
-        "content": "今天哥哥陪我玩了一整天...\\n\\nTag: 开心, 约会",
-        "tag": null
-    }
-    ```
-    """
+    """AI创建日记（通过 DailyNote 插件）"""
     try:
-        # 确保插件已加载
         if not plugin_manager.plugins:
             await plugin_manager.load_plugins()
 
-        # 通过 DailyNote 插件创建日记
         result = await plugin_manager.process_tool_call("DailyNote", {
             "command": "create",
             "maid": request.character_id,
-            "Date": request.date,
-            "Content": request.content,
-            "Tag": request.tag
+            "date": request.date,
+            "content": request.content,
+            "tag": request.tag
         })
 
         if result.get("status") == "success":
-            # 读取创建的日记并返回
             diary_path = result.get("path")
             diary = diary_service.read_diary(diary_path)
             if diary:
-                # 添加后台任务：自动同步角色的日记到向量索引
                 background_tasks.add_task(_trigger_vector_sync)
-
                 return {
                     "message": result.get("message", "日记创建成功"),
                     "diary": DiaryEntry(**diary)
                 }
             else:
-                # 如果读取失败，返回基本信息
                 return {
                     "message": result.get("message", "日记创建成功"),
                     "diary": DiaryEntry(
@@ -212,26 +177,11 @@ async def ai_update_diary(
     background_tasks: BackgroundTasks,
     diary_service: DiaryFileService = Depends(get_diary_file_service)
 ):
-    """
-    AI更新日记（通过 DailyNote 插件）
-
-    Request Body:
-    ```json
-    {
-        "target": "这是日记中要被替换掉的旧内容，至少15个字符长",
-        "replace": "这是将要写入日记的新内容",
-        "character_id": "550e8400-e29b-41d4-a716-446655440000"
-    }
-    ```
-
-    如果不指定 character_id，会在所有角色的日记中搜索。
-    """
+    """AI更新日记（通过 DailyNote 插件）"""
     try:
-        # 确保插件已加载
         if not plugin_manager.plugins:
             await plugin_manager.load_plugins()
 
-        # 通过 DailyNote 插件更新日记
         result = await plugin_manager.process_tool_call("DailyNote", {
             "command": "update",
             "maid": request.character_id,
@@ -240,11 +190,9 @@ async def ai_update_diary(
         })
 
         if result.get("status") == "success":
-            # 读取更新后的日记并返回
             diary_path = result.get("path")
             diary = diary_service.read_diary(diary_path)
             if diary:
-                # 添加后台任务：自动同步角色的日记到向量索引
                 if request.character_id:
                     background_tasks.add_task(_trigger_vector_sync)
 
@@ -275,20 +223,7 @@ async def delete_diary(
     path: str,
     diary_service: DiaryFileService = Depends(get_diary_file_service)
 ):
-    """
-    删除日记
-
-    Path Parameters:
-    - path: 文件相对路径
-
-    Returns:
-    ```json
-    {
-        "message": "日记删除成功",
-        "path": "550e8400-.../daily/2025-01-23-14_30_52.txt"
-    }
-    ```
-    """
+    """删除日记"""
     try:
         success = diary_service.delete_diary(path)
         if not success:
@@ -304,13 +239,9 @@ async def delete_diary(
         raise HTTPException(status_code=500, detail=f"删除日记失败: {str(e)}")
 
 
-# ==================== Helper Functions ====================
-
 async def _trigger_vector_sync():
-    """
-    后台任务：触发向量索引同步（调用统一同步服务）
-    """
-    from app.vector_index import sync_all_diaries_to_vector_index
+    """后台任务：触发向量索引同步"""
+    from memory.v1.vector_index import sync_all_diaries_to_vector_index
 
     logger.info("[Diary API] 🚀 触发向量索引同步（后台任务）")
     try:

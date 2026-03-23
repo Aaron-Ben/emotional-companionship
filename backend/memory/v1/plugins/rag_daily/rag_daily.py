@@ -41,7 +41,7 @@ from app.services.embedding import EmbeddingService
 
 # 类型提示导入（避免运行时循环导入）
 if TYPE_CHECKING:
-    from app.vector_index import VectorIndex
+    from memory.v1.vector_index import VectorIndex
 
 logger = logging.getLogger(__name__)
 

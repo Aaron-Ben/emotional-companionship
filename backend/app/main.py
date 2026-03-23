@@ -1,11 +1,26 @@
 """FastAPI application for emotional companionship AI system."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pathlib import Path
+
+# 加载环境变量
+env_paths = [
+    Path(__file__).parent.parent / ".env",
+    Path(__file__).parent.parent.parent / ".env",
+]
+for env_path in env_paths:
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+        break
+
+# 记忆系统后端选择 (默认 v1)
+MEMORY_BACKEND = os.getenv("MEMORY", "v1")
+print(f"[Main] Memory backend: {MEMORY_BACKEND}")
 
 # Load environment variables from .env file (try multiple locations)
 env_paths = [
@@ -56,7 +71,7 @@ async def lifespan(app: FastAPI):
 
     # ✅ 先初始化 VectorIndex，再加载插件（修复初始化顺序问题）
     from app.vector_index import initialize_vector_index
-    from plugins.plugin import plugin_manager
+    from memory.v1.plugin_manager import plugin_manager
 
     try:
         vector_index = await initialize_vector_index()

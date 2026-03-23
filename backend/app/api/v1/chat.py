@@ -14,7 +14,7 @@ from app.services.chat_history_service import ChatHistoryService
 from app.models.character import UserCharacterPreference
 from app.schemas.message import ChatRequest, ChatResponse
 
-from plugins.plugin import plugin_manager
+from memory.v1.plugin_manager import plugin_manager
 
 # Create router
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])

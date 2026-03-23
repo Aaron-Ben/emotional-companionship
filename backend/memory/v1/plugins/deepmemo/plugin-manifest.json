@@ -9,7 +9,7 @@
     "timeout": 60000
   },
   "entryPoint": {
-    "command": "./target/release/deepmemo"
+    "command": "./target/debug/deepmemo"
   },
   "capabilities": {
     "invocationCommands": [

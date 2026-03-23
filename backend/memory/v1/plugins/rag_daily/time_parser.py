@@ -6,7 +6,7 @@ from typing import List, Dict, Optional
 import pytz
 from dataclasses import dataclass
 
-from app.config.time_expressions import (
+from memory.v1.time_expressions import (
     get_time_expressions,
     parse_chinese_number,
     TimeExpression as TimeExpressionConfig,

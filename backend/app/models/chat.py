@@ -15,17 +15,6 @@ class ChatMessage(BaseModel):
     content: str = Field(..., description="Message content")
     timestamp: int = Field(..., description="Unix timestamp in milliseconds")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "id": "msg_1770291136799_user_k6mjdfb",
-                "role": "user",
-                "name": "用户名",
-                "content": "你好",
-                "timestamp": 1770291136799
-            }
-        }
-
     @staticmethod
     def generate_id(role: str) -> str:
         """Generate unique message ID."""
@@ -41,14 +30,3 @@ class ChatTopic(BaseModel):
     created_at: int = Field(..., description="Creation timestamp (from filesystem)")
     updated_at: int = Field(..., description="Last update timestamp (from filesystem)")
     message_count: int = Field(..., description="Number of messages in topic")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "topic_id": 1707523200,
-                "character_id": "550e8400-e29b-41d4-a716-446655440000",
-                "created_at": 1707523200,
-                "updated_at": 1707526800,
-                "message_count": 10
-            }
-        }

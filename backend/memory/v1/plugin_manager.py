@@ -12,7 +12,7 @@ from dotenv import dotenv_values
 logger = logging.getLogger(__name__)
 
 # 定义插件目录和清单文件名
-PLUGIN_DIR = Path(__file__).parent
+PLUGIN_DIR = Path(__file__).parent / "plugins"
 MANIFEST_FILE_NAME = "plugin-manifest.json"
 
 class PluginManager:
