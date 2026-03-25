@@ -9,8 +9,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Default ChromaDB persistence directory
-DEFAULT_PERSIST_DIR = Path(__file__).parent.parent.parent / "data" / "chroma"
+# Default ChromaDB persistence directory - project root
+DEFAULT_PERSIST_DIR = Path(__file__).parent.parent.parent.parent / "chroma-db"
 
 
 class ChromaDBManager:
@@ -27,6 +27,10 @@ class ChromaDBManager:
             persist_directory: Directory for ChromaDB persistence
             collection_name: Name of the collection to use
         """
+        # Use default if not provided
+        if persist_dir is None:
+            persist_dir = str(DEFAULT_PERSIST_DIR)
+
         self.client = chromadb.PersistentClient(
             path=persist_dir,
             settings=Settings()
@@ -34,7 +38,7 @@ class ChromaDBManager:
 
         self.collection: Collection = self.client.get_or_create_collection(
             name=collection_name,
-            matadata={"hnsw:space":"cosine"}
+            metadata={"hnsw:space": "cosine"}
         )
 
 
@@ -67,11 +71,11 @@ class ChromaDBManager:
         if owner_space:
             where_clause["$and"].append({"owner_space": {"$eq": owner_space}})
 
-        # uri 前缀匹配（ChromaDB 支持 $startsWith）
-        if category_uri_prefix:
-            where_clause["$and"].append(
-                {"uri": {"$startsWith": category_uri_prefix}}
-            )
+        # uri 前缀匹配 - 由于 ChromaDB 限制，改用后处理过滤
+        # if category_uri_prefix:
+        #     where_clause["$and"].append(
+        #         {"uri": {"$startsWith": category_uri_prefix}}
+        #     )
 
         # 执行向量搜索
         results = self.collection.query(
@@ -87,6 +91,10 @@ class ChromaDBManager:
                 metadata = results["metadatas"][0][i] if results["metadatas"] else {}
                 distance = results["distances"][0][i] if results["distances"] else 0
 
+                # 后处理过滤 uri 前缀
+                if category_uri_prefix and not metadata.get("uri", "").startswith(category_uri_prefix):
+                    continue
+
                 # ChromaDB 返回的是距离（越小越相似），需要转换为相似度分数
                 # cosine 距离范围 [0, 2]，转换为相似度 [1, -1]，再归一化到 [0, 1]
                 score = 1 - (distance / 2)  # 或者直接用 1 - distance
@@ -99,4 +107,52 @@ class ChromaDBManager:
                 similar_memories.append(memory_record)
 
         return similar_memories
+
+    async def add_memory(
+        self,
+        memory_id: str,
+        embedding: List[float],
+        text: str,
+        metadata: Dict[str, Any],
+    ) -> bool:
+        """Add a memory to ChromaDB.
+
+        Args:
+            memory_id: Unique ID for the memory
+            embedding: Vector embedding
+            text: Text content to store
+            metadata: Metadata dict (uri, category, etc.)
+
+        Returns:
+            True if successful
+        """
+        try:
+            self.collection.add(
+                ids=[memory_id],
+                embeddings=[embedding],
+                documents=[text],
+                metadatas=[metadata],
+            )
+            logger.info(f"Added memory to ChromaDB: {memory_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to add memory to ChromaDB: {e}")
+            return False
+
+    async def delete_memory(self, memory_id: str) -> bool:
+        """Delete a memory from ChromaDB.
+
+        Args:
+            memory_id: ID of the memory to delete
+
+        Returns:
+            True if successful
+        """
+        try:
+            self.collection.delete(ids=[memory_id])
+            logger.info(f"Deleted memory from ChromaDB: {memory_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete memory from ChromaDB: {e}")
+            return False
     

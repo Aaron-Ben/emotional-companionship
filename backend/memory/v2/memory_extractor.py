@@ -14,7 +14,7 @@ from memory.v2.model import CandidateMemory, MemoryCategory, MergedMemoryPayload
 
 logger = logging.getLogger(__name__)
 
-DATA_BASE_DIR= Path(__file__).parent.parent.parent / "data"
+DATA_BASE_DIR = Path(__file__).parent.parent.parent.parent / "data"
 
 
 class MemoryExtractor:

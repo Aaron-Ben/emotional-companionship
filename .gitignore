@@ -32,3 +32,4 @@ backend/app/services/diaries
 
 /data
 /VectorStore
+/chroma-db

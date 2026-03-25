@@ -52,6 +52,11 @@ class MemoryDeduplicator:
             self._embedder = get_embeddings_batch
         return self._embedder
 
+    async def _get_embedding_async(self, text: str) -> List[float]:
+        """Get embedding for text asynchronously."""
+        results = await self.embedder([text])
+        return results[0] if results else []
+
     def _category_uri_prefix(self, category: str, user: str) -> str:
         """Build category URI prefix for file path."""
         if category in self.USER_CATEGORIES:
@@ -329,7 +334,7 @@ class MemoryDeduplicator:
 
         # Generate embedding for candidate
         query_text = f"{candidate.abstract} {candidate.content}"
-        query_vector = self.embedder(query_text)
+        query_vector = await self._get_embedding_async(query_text)
 
         # Build category URI prefix
         category_uri_prefix = self._category_uri_prefix(
