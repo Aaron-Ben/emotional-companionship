@@ -80,9 +80,20 @@
 - **框架**: FastAPI
 - **数据库**: SQLite + SQLAlchemy 2.0
 - **LLM & Embedding**: OpenRouter (支持 BGE-M3 等模型)
-- **向量索引**: VexusIndex (自研向量数据库)
+- **向量索引**: ChromaDB (V2 记忆系统)
 - **插件系统**: 自定义插件管理器，支持 stdio/direct 协议
 - **Python**: 3.13+
+
+### 记忆系统 (V1/V2)
+
+项目支持两套记忆系统，通过环境变量切换：
+
+| 版本 | 存储方式 | 数据格式 | 向量检索 |
+|------|----------|----------|----------|
+| V1 | 文件系统 | 日记 (diary/) | VexusIndex |
+| V2 | ChromaDB | 会话 (session/) | ChromaDB |
+
+启用 V2：`MEMORY=v2` (在 `.env` 中配置)
 
 ### 前端
 - **框架**: React 18 + TypeScript
@@ -111,9 +122,8 @@ emotional-companionship/
 │   │   │   ├── chat_service.py         # 对话服务（含工具调用）
 │   │   │   ├── character_service.py    # 角色服务
 │   │   │   ├── llm.py                   # LLM 服务
-│   │   │   ├── chat_history_service.py  # 对话历史服务
-│   │   │   ├── chunk_text.py            # 文本分块服务
 │   │   │   ├── embedding.py             # 向量化服务
+│   │   │   ├── session_service.py       # 会话服务
 │   │   │   └── diary/                   # 日记服务
 │   │   │       └── file_service.py
 │   │   ├── utils/            # 工具模块
@@ -121,34 +131,37 @@ emotional-companionship/
 │   │   │   └── json.py               # JSON 工具
 │   │   ├── characters/       # 角色模块
 │   │   └── vector_index.py  # 向量索引系统
+│   ├── memory/               # 记忆系统
+│   │   ├── factory.py        # 工厂模式 (V1/V2 切换)
+│   │   ├── v1/               # V1 日记系统
+│   │   │   ├── backend.py
+│   │   │   ├── services/
+│   │   │   └── plugins/
+│   │   └── v2/               # V2 会话系统
+│   │       ├── backend.py
+│   │       ├── retriever.py          # 层级检索器
+│   │       ├── compressor.py         # 会话压缩器
+│   │       ├── chromadb_manager.py   # ChromaDB 管理
+│   │       ├── memory_extractor.py   # 记忆提取
+│   │       └── memory_deduplicator.py # 记忆去重
 │   ├── plugins/           # 插件系统
-│   │   ├── plugin.py              # 插件管理器
-│   │   ├── tool_call_parser.py   # 工具调用解析器
-│   │   ├── tool_executor.py      # 工具执行器
-│   │   ├── daily_note/           # DailyNote 插件
-│   │   ├── deepmemo/             # DeepMemo 插件（Rust）
-│   │   └── rag_daily/            # RAG 日记检索插件
 │   ├── tests/             # 测试目录
-│   │   └── test_vector_index.py  # 向量索引测试
-│   ├── resources/        # 资源文件
 │   └── main.py           # 应用入口
 │
 ├── frontend/                  # 前端应用
-│   └── src/
-│       ├── components/      # React 组件
-│       ├── pages/         # 页面组件
-│       ├── hooks/         # 自定义 Hooks
-│       ├── services/       # API 服务
-│       └── types/         # TypeScript 类型
 │
 ├── data/                  # 数据目录
+│   ├── user/{user}/memories/   # V2 用户记忆 (profile, preferences, entities...)
+│   ├── session/{user}/{id}/    # V2 会话数据 (.abstract.md, .overview.md)
 │   ├── chat/           # 对话历史
-│   ├── diary/          # 日记存储
-│   ├── logs/           # 日志文件（today.txt + YYYY-MM-DD.txt）
-│   └── characters/     # 角色数据（日记、配置等）
-├── VectorStore/         # 向量索引存储目录
+│   ├── diary/          # 日记存储 (V1)
+│   ├── logs/           # 日志文件
+│   └── characters/     # 角色数据
+├── chroma-db/           # ChromaDB 向量存储 (V2)
+├── VectorStore/         # 向量索引存储 (V1)
 │
 ├── Makefile             # 开发命令
+├── CLAUDE.md            # Claude Code 指南
 └── README.md            # 项目文档
 ```
 
@@ -390,6 +403,7 @@ python tests/test_vector_index.py
 | `API_URL` | OpenRouter API 地址 | `https://openrouter.ai/api/v1` | ✅ |
 | `OPENROUTER_MODEL` | LLM 模型名称 | `anthropic/claude-3.5-sonnet` | ✅ |
 | `EmbeddingModel` | Embedding 模型名称 | `baai/bge-m3` | ✅ |
+| `MEMORY` | 记忆系统版本 (v1/v2) | v1 | - |
 
 ## 日志说明
 
