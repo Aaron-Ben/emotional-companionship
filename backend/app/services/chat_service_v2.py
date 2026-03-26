@@ -5,6 +5,7 @@ V2 特点：
 2. 使用 SessionService 管理会话（自动 commit）
 3. 不使用 plugin_manager（tool calling）
 4. 集成日记生成和记忆压缩
+5. 集成 Skills 系统（通过 system prompt 注入）
 """
 
 from typing import List, Dict, Optional, AsyncGenerator, Any
@@ -21,6 +22,7 @@ from app.schemas.message import (
     ChatResponse,
     MessageContext
 )
+from app.skills.loader import get_skills_loader
 from memory.v2.backend import MemoryBackend
 from memory.v2.retriever import SpaceType
 
@@ -139,10 +141,33 @@ class ChatServiceV2:
         Returns:
             List of message dicts ready for LLM
         """
-        # Generate system prompt
-        system_prompt = self.character_service.get_prompt(request.character_id)
-        if not system_prompt:
+        # Generate character prompt
+        character_prompt = self.character_service.get_prompt(request.character_id)
+        if not character_prompt:
             raise ValueError(f"Character not found: {request.character_id}")
+
+        # Build skills content
+        skills_loader = get_skills_loader()
+        # 加载所有可用 skill（不依赖 always 标志）
+        all_skills = [s["name"] for s in skills_loader.list_skills() if s["available"]]
+        always_content = skills_loader.load_skills_for_context(all_skills) if all_skills else ""
+        skills_summary = skills_loader.build_skills_summary()
+
+        # Combine character prompt with skills
+        parts = [character_prompt]
+
+        # Add always-loaded skills (Active Skills)
+        if always_content:
+            parts.append(f"# Active Skills\n\n{always_content}")
+
+        # Add skills summary (Available Skills)
+        if skills_summary:
+            parts.append(f"""# Skills
+The following skills extend your capabilities. You can read their SKILL.md files for details.
+
+{skills_summary}""")
+
+        system_prompt = "\n\n".join(parts)
 
         # Build messages list
         messages = [{"role": "system", "content": system_prompt}]
