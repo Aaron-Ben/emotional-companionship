@@ -345,21 +345,30 @@ class MemoryDeduplicator:
         owner_space = owner
 
         try:
+            # Search only L2 for dedup — we compare content-level similarity
             results = await self.chroma_db.search_similar_memories(
                 owner_space=owner_space,
                 category_uri_prefix=category_uri_prefix,
                 query_vector=query_vector,
                 limit=5,
+                level_filter=2,
             )
 
-            similar = []
+            # De-duplicate by URI (multi-level records share the same URI)
+            best_by_uri: Dict[str, tuple[MemoryContext, float]] = {}
             for result in results:
                 score = float(result.get("_score", 0))
-                if score >= self.SIMILARITY_THRESHOLD:
-                    context = MemoryContext.from_dict(result)
-                    if context:
-                        context.meta = {**(context.meta or {}), "_dedup_score": score}
-                        similar.append(context)
+                if score < self.SIMILARITY_THRESHOLD:
+                    continue
+                uri = result.get("uri", "")
+                if uri in best_by_uri and best_by_uri[uri][1] >= score:
+                    continue
+                context = MemoryContext.from_dict(result)
+                if context:
+                    context.meta = {**(context.meta or {}), "_dedup_score": score}
+                    best_by_uri[uri] = (context, score)
+
+            similar = [ctx for ctx, _ in best_by_uri.values()]
 
             if batch_memories:
                 seen_uris = {c.uri for c in similar}

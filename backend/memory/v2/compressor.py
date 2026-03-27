@@ -71,6 +71,12 @@ class Compressor:
         results = await get_embeddings_batch([text])
         return results[0] if results else []
 
+    async def _get_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
+        """Get embeddings for multiple texts asynchronously."""
+        from app.services.embedding import get_embeddings_batch
+
+        return await get_embeddings_batch(texts)
+
     def _record_change(
         self, file_uri: str, change_type: str, parent_uri: Optional[str] = None
     ) -> None:
@@ -122,40 +128,100 @@ class Compressor:
     async def _index_memory(
         self, memory: MemoryContext, change_type: str = "added"
     ) -> bool:
-        """Add memory to ChromaDB."""
-        vectorize_text = memory.content or memory.abstract or ""
+        """Index memory to ChromaDB with multi-level records (L0, L1, L2 + chunks).
 
-        if not vectorize_text:
+        Creates separate ChromaDB records for each level using composite IDs:
+        {base_id}__L0, {base_id}__L1, {base_id}__L2, {base_id}__L2__chunk_N
+        """
+        has_content = bool(memory.abstract or memory.overview or memory.content)
+        if not has_content:
             logger.warning(f"Empty text for memory {memory.uri}, skipping indexing")
             return False
 
-        try:
-            embedding = await self._get_embedding(vectorize_text)
+        base_id = memory.id
 
-            # Prepare metadata
-            metadata = {
+        try:
+            # Common metadata shared across all levels
+            common_meta = {
                 "uri": memory.uri,
                 "parent_uri": memory.parent_uri,
+                "base_id": base_id,
                 "category": memory.category,
-                "abstract": memory.abstract,
-                "overview": memory.overview,
-                "content": memory.content,
-                "level": memory.level,
                 "session_id": memory.session_id,
                 "user": memory.user,
                 "context_type": "memory",
                 "owner_space": memory.user,
             }
 
-            await self.chromadb.add_memory(
-                memory_id=memory.id,
-                embedding=embedding,
-                text=vectorize_text,
-                metadata=metadata,
-            )
+            # --- L0: Abstract ---
+            if memory.abstract:
+                abstract_embedding = await self._get_embedding(memory.abstract)
+                await self.chromadb.add_memory(
+                    memory_id=f"{base_id}__L0",
+                    embedding=abstract_embedding,
+                    text=memory.abstract,
+                    metadata={
+                        **common_meta,
+                        "abstract": memory.abstract,
+                        "level": 0,
+                    },
+                )
+
+            # --- L1: Overview ---
+            if memory.overview:
+                overview_embedding = await self._get_embedding(memory.overview)
+                await self.chromadb.add_memory(
+                    memory_id=f"{base_id}__L1",
+                    embedding=overview_embedding,
+                    text=memory.overview,
+                    metadata={
+                        **common_meta,
+                        "overview": memory.overview,
+                        "level": 1,
+                    },
+                )
+
+            # --- L2: Content (with chunking for large text) ---
+            content_text = memory.content or ""
+            if content_text:
+                chunks = self._chunk_text(content_text, chunk_size=8000, overlap=800)
+
+                if len(chunks) > 1:
+                    chunk_embeddings = await self._get_embeddings_batch(chunks)
+                    for i, (chunk_text, chunk_embedding) in enumerate(
+                        zip(chunks, chunk_embeddings)
+                    ):
+                        await self.chromadb.add_memory(
+                            memory_id=f"{base_id}__L2__chunk_{i:04d}",
+                            embedding=chunk_embedding,
+                            text=chunk_text,
+                            metadata={
+                                **common_meta,
+                                "abstract": memory.abstract,
+                                "overview": memory.overview,
+                                "content": chunk_text,
+                                "chunk_index": i,
+                                "total_chunks": len(chunks),
+                                "level": 2,
+                            },
+                        )
+                else:
+                    content_embedding = await self._get_embedding(content_text)
+                    await self.chromadb.add_memory(
+                        memory_id=f"{base_id}__L2",
+                        embedding=content_embedding,
+                        text=content_text,
+                        metadata={
+                            **common_meta,
+                            "abstract": memory.abstract,
+                            "overview": memory.overview,
+                            "content": content_text,
+                            "level": 2,
+                        },
+                    )
 
             self._record_change(memory.uri, change_type, parent_uri=memory.parent_uri)
-            logger.info(f"Indexed memory to ChromaDB: {memory.uri}")
+            logger.info(f"Indexed memory to ChromaDB (multi-level): {memory.uri}")
             return True
 
         except Exception as e:
@@ -167,7 +233,7 @@ class Compressor:
         candidate: CandidateMemory,
         target_memory: MemoryContext,
     ) -> bool:
-        """Merge candidate content into an existing memory file."""
+        """Merge candidate content into an existing memory file and re-index."""
         try:
             # Read existing content
             file_path = DATA_BASE_DIR / target_memory.uri
@@ -199,8 +265,13 @@ class Compressor:
             # Update memory context
             target_memory.abstract = payload.abstract
             target_memory.overview = payload.overview
+            target_memory.content = payload.content
 
-            logger.info(f"Merged memory {target_memory.uri}")
+            # Re-index: delete old multi-level records, then re-create
+            await self.chromadb.delete_memory_tree(target_memory.id)
+            await self._index_memory(target_memory, change_type="modified")
+
+            logger.info(f"Merged and re-indexed memory {target_memory.uri}")
             return True
 
         except Exception as e:
@@ -224,8 +295,8 @@ class Compressor:
             return False
 
         try:
-            # Delete from ChromaDB
-            await self.chromadb.delete_memory(memory.id)
+            # Delete all multi-level records from ChromaDB
+            await self.chromadb.delete_memory_tree(memory.id)
         except Exception as e:
             logger.warning(f"Failed to remove vector record for {memory.uri}: {e}")
 

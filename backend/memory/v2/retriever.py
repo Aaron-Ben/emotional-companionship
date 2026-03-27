@@ -1,7 +1,7 @@
 """
 Hierarchical retriever for V2 memory system.
 
-基于 ChromaDB 向量检索和文件系统读取的层级记忆检索实现。
+基于 ChromaDB 多层级向量检索 + 分数传播的层级记忆检索实现。
 """
 
 import logging
@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 # 数据目录基础路径
 DATA_DIR = Path(__file__).parent.parent.parent.parent / "data"
+
+# Score propagation: weight for direct vector score vs sibling boost
+SCORE_PROPAGATION_ALPHA = 0.7
 
 
 class ContextType(str, Enum):
@@ -60,7 +63,7 @@ class QueryResult:
 
 
 class HierarchicalRetriever:
-    """层级记忆检索器，支持 user 和 agent 空间。"""
+    """层级记忆检索器，支持多层级 ChromaDB 搜索和分数传播。"""
 
     def __init__(
         self,
@@ -68,17 +71,9 @@ class HierarchicalRetriever:
         embedding_service: Any,
         data_dir: Optional[Path] = None,
     ):
-        """初始化 HierarchicalRetriever.
-
-        Args:
-            chromadb_manager: ChromaDBManager 实例
-            embedding_service: EmbeddingService 实例
-            data_dir: 数据目录路径，默认为项目 data 目录
-        """
         self._chromadb = chromadb_manager
         self._embedding = embedding_service
         self._data_dir = data_dir or DATA_DIR
-        self._fs_cache: Dict[str, Any] = {}
 
     async def retrieve(
         self,
@@ -98,8 +93,6 @@ class HierarchicalRetriever:
         Returns:
             QueryResult: 包含 matched_contexts 和 searched_directories
         """
-        searched_dirs: List[str] = []
-
         # Step 1: 向量化查询
         query_vector = await self._embedding.get_single_embedding(query)
         if not query_vector:
@@ -107,55 +100,50 @@ class HierarchicalRetriever:
             return QueryResult(
                 query=query,
                 matched_contexts=[],
-                searched_directories=searched_dirs,
+                searched_directories=[],
             )
 
         results: List[MatchedContext] = []
 
-        # Step 2: ChromaDB 向量检索 (L2 detail level)
-        chroma_results = await self._search_detail_level(
+        # Step 2: ChromaDB 向量检索 (all levels: L0, L1, L2)
+        chroma_results = await self._search_all_levels(
             query_vector=query_vector,
             user=user,
             space=space,
             limit=limit,
         )
         results.extend(chroma_results)
-        searched_dirs.extend(self._get_search_directories(user, space))
 
-        # Step 3: 文件系统检索 (L0/L1 - abstract/overview)
-        fs_results = await self._search_fs_levels(
-            query=query,
-            user=user,
-            space=space,
-            limit=limit,
-        )
-        results.extend(fs_results)
+        # Step 3: 分数传播
+        results = self._propagate_scores(results)
 
-        # Step 4: 按 score 排序并返回
+        # Step 4: 会话文件检索 (filesystem, sessions not in ChromaDB)
+        session_results = await self._search_session_files(user, limit)
+        results.extend(session_results)
+
+        # Step 5: 按 score 排序并返回
         results.sort(key=lambda x: x.score, reverse=True)
         final_results = results[:limit]
 
         logger.info(
-            f"[HierarchicalRetriever] Retrieved {len(final_results)} results for query: {query[:50]}..."
+            f"[HierarchicalRetriever] Retrieved {len(final_results)} results "
+            f"for query: {query[:50]}..."
         )
 
         return QueryResult(
             query=query,
             matched_contexts=final_results,
-            searched_directories=searched_dirs,
+            searched_directories=self._get_search_directories(user, space),
         )
 
-    async def _search_detail_level(
+    async def _search_all_levels(
         self,
         query_vector: List[float],
         user: str,
         space: SpaceType,
         limit: int,
     ) -> List[MatchedContext]:
-        """从 ChromaDB 检索 L2 详细内容."""
-        results: List[MatchedContext] = []
-
-        # 构建 owner_space 和 category_uri_prefix
+        """从 ChromaDB 检索全部层级 (L0, L1, L2) 的向量匹配结果."""
         if space == SpaceType.AGENT:
             owner_space = f"agent:{user}"
         else:
@@ -164,57 +152,86 @@ class HierarchicalRetriever:
         category_prefix = f"data/{space.value}/{user}/memories/"
 
         try:
+            # Search all levels — limit*3 to account for multi-level records per URI
             chroma_results = await self._chromadb.search_similar_memories(
                 owner_space=owner_space,
                 category_uri_prefix=category_prefix,
                 query_vector=query_vector,
                 limit=limit,
+                # No level_filter → search L0, L1, L2
             )
 
+            # De-duplicate by URI: keep the highest-scoring record per URI
+            best_by_uri: Dict[str, MatchedContext] = {}
             for r in chroma_results:
-                results.append(
-                    MatchedContext(
-                        uri=r.get("uri", ""),
+                uri = r.get("uri", "")
+                score = r.get("_score", 0.0)
+                if uri not in best_by_uri or score > best_by_uri[uri].score:
+                    best_by_uri[uri] = MatchedContext(
+                        uri=uri,
                         context_type=ContextType.MEMORY,
                         level=r.get("level", 2),
                         abstract=r.get("abstract", ""),
                         overview=r.get("overview", None),
                         category=r.get("category", ""),
-                        score=r.get("_score", 0.0),
+                        score=score,
                     )
-                )
+
+            return list(best_by_uri.values())
+
         except Exception as e:
             logger.error(f"[HierarchicalRetriever] ChromaDB search failed: {e}")
+            return []
 
-        return results
+    def _propagate_scores(self, results: List[MatchedContext]) -> List[MatchedContext]:
+        """基于 parent_uri 的分数传播：同一目录下的兄弟记忆互相提升分数.
 
-    async def _search_fs_levels(
-        self,
-        query: str,
-        user: str,
-        space: SpaceType,
-        limit: int,
-    ) -> List[MatchedContext]:
-        """从文件系统检索 L0 (abstract) 和 L1 (overview)."""
-        results: List[MatchedContext] = []
+        公式: final_score = alpha * self_score + (1 - alpha) * max(sibling_scores)
+        单条记忆（无兄弟）保持原分不变。
+        """
+        if not results:
+            return results
 
-        # 搜索会话文件
-        session_results = await self._search_session_files(query, user, limit)
-        results.extend(session_results)
+        # Group by parent directory (derived from URI)
+        parent_groups: Dict[str, List[MatchedContext]] = {}
+        for r in results:
+            # e.g. "data/user/u1/memories/preferences/mem_xxx.md" → "data/user/u1/memories/preferences"
+            parent_key = r.uri.rsplit("/", 1)[0] if "/" in r.uri else r.uri
+            parent_groups.setdefault(parent_key, []).append(r)
 
-        # 搜索记忆文件
-        memory_results = await self._search_memory_files(query, user, space, limit)
-        results.extend(memory_results)
+        propagated = []
+        for ctx in results:
+            parent_key = ctx.uri.rsplit("/", 1)[0] if "/" in ctx.uri else ctx.uri
+            siblings = parent_groups.get(parent_key, [])
 
-        return results
+            if len(siblings) <= 1:
+                # No siblings, keep original score
+                propagated.append(ctx)
+                continue
+
+            # Max sibling score (excluding self)
+            sibling_scores = [s.score for s in siblings if s.uri != ctx.uri]
+            max_sibling_score = max(sibling_scores) if sibling_scores else 0.0
+
+            # Weighted combination
+            final_score = (
+                SCORE_PROPAGATION_ALPHA * ctx.score
+                + (1 - SCORE_PROPAGATION_ALPHA) * max_sibling_score
+            )
+            ctx.score = final_score
+            propagated.append(ctx)
+
+        return propagated
 
     async def _search_session_files(
         self,
-        query: str,
         user: str,
         limit: int,
     ) -> List[MatchedContext]:
-        """搜索会话目录中的 .abstract.md 和 .overview.md 文件."""
+        """搜索会话目录中的 .abstract.md 和 .overview.md 文件.
+
+        会话文件不进入 ChromaDB，使用简单的关键词匹配。
+        """
         results: List[MatchedContext] = []
         session_dir = self._data_dir / "session" / user
 
@@ -222,7 +239,6 @@ class HierarchicalRetriever:
             return results
 
         try:
-            # 遍历所有会话目录
             for session_path in session_dir.iterdir():
                 if not session_path.is_dir():
                     continue
@@ -234,7 +250,6 @@ class HierarchicalRetriever:
                 if abstract_file.exists():
                     content = await self._read_file(abstract_file)
                     if content:
-                        score = self._calculate_text_similarity(query, content)
                         results.append(
                             MatchedContext(
                                 uri=f"session/{session_id}/.abstract.md",
@@ -242,7 +257,7 @@ class HierarchicalRetriever:
                                 level=0,
                                 abstract=content,
                                 category="session",
-                                score=score,
+                                score=0.1,  # baseline score for session files
                             )
                         )
 
@@ -251,7 +266,6 @@ class HierarchicalRetriever:
                 if overview_file.exists():
                     content = await self._read_file(overview_file)
                     if content:
-                        score = self._calculate_text_similarity(query, content)
                         results.append(
                             MatchedContext(
                                 uri=f"session/{session_id}/.overview.md",
@@ -259,7 +273,7 @@ class HierarchicalRetriever:
                                 level=1,
                                 overview=content,
                                 category="session",
-                                score=score,
+                                score=0.1,
                             )
                         )
 
@@ -270,12 +284,10 @@ class HierarchicalRetriever:
                         if not archive_dir.is_dir():
                             continue
 
-                        # archive_X .abstract.md
                         archive_abstract = archive_dir / ".abstract.md"
                         if archive_abstract.exists():
                             content = await self._read_file(archive_abstract)
                             if content:
-                                score = self._calculate_text_similarity(query, content)
                                 results.append(
                                     MatchedContext(
                                         uri=f"session/{session_id}/history/{archive_dir.name}/.abstract.md",
@@ -283,16 +295,14 @@ class HierarchicalRetriever:
                                         level=0,
                                         abstract=content,
                                         category="session_archive",
-                                        score=score,
+                                        score=0.1,
                                     )
                                 )
 
-                        # archive_X .overview.md
                         archive_overview = archive_dir / ".overview.md"
                         if archive_overview.exists():
                             content = await self._read_file(archive_overview)
                             if content:
-                                score = self._calculate_text_similarity(query, content)
                                 results.append(
                                     MatchedContext(
                                         uri=f"session/{session_id}/history/{archive_dir.name}/.overview.md",
@@ -300,66 +310,12 @@ class HierarchicalRetriever:
                                         level=1,
                                         overview=content,
                                         category="session_archive",
-                                        score=score,
+                                        score=0.1,
                                     )
                                 )
         except Exception as e:
             logger.error(f"[HierarchicalRetriever] Failed to search session files: {e}")
 
-        # 按 score 排序，取 top N
-        results.sort(key=lambda x: x.score, reverse=True)
-        return results[:limit]
-
-    async def _search_memory_files(
-        self,
-        query: str,
-        user: str,
-        space: SpaceType,
-        limit: int,
-    ) -> List[MatchedContext]:
-        """搜索记忆目录中的记忆文件."""
-        results: List[MatchedContext] = []
-        memories_dir = self._data_dir / space.value / user / "memories"
-
-        if not memories_dir.exists():
-            return results
-
-        try:
-            # 遍历各分类目录
-            for category_dir in memories_dir.iterdir():
-                if not category_dir.is_dir():
-                    continue
-
-                category = category_dir.name
-
-                # 读取该分类下的所有 .md 文件
-                for mem_file in category_dir.glob("*.md"):
-                    if mem_file.name.startswith("."):
-                        continue
-
-                    content = await self._read_file(mem_file)
-                    if not content:
-                        continue
-
-                    score = self._calculate_text_similarity(query, content)
-                    if score > 0.05:  # 简单阈值过滤
-                        # 提取 abstract (取第一段)
-                        abstract = self._extract_abstract(content)
-
-                        results.append(
-                            MatchedContext(
-                                uri=f"{space.value}/{user}/memories/{category}/{mem_file.name}",
-                                context_type=ContextType.MEMORY,
-                                level=0,
-                                abstract=abstract,
-                                category=category,
-                                score=score,
-                            )
-                        )
-        except Exception as e:
-            logger.error(f"[HierarchicalRetriever] Failed to search memory files: {e}")
-
-        # 按 score 排序，取 top N
         results.sort(key=lambda x: x.score, reverse=True)
         return results[:limit]
 
@@ -371,46 +327,6 @@ class HierarchicalRetriever:
         except Exception as e:
             logger.warning(f"[HierarchicalRetriever] Failed to read {file_path}: {e}")
             return ""
-
-    def _calculate_text_similarity(self, query: str, text: str) -> float:
-        """基于关键词匹配的相似度计算，支持中英文."""
-        if not query or not text:
-            return 0.0
-
-        # 转换为小写
-        query_lower = query.lower()
-        text_lower = text.lower()
-
-        # 中文：检查每个字符是否出现在文本中
-        # 英文：按空格分割
-        if " " in query_lower:
-            query_words = set(query_lower.split())
-            text_words = set(text_lower.split())
-        else:
-            # 中文字符匹配：每个查询字符都在文本中就算匹配
-            query_chars = set(query_lower)
-            text_chars = set(text_lower)
-            query_words = query_chars
-            text_words = text_chars
-
-        if not query_words:
-            return 0.0
-
-        intersection = query_words & text_words
-        return len(intersection) / len(query_words)
-
-    def _extract_abstract(self, content: str) -> str:
-        """从完整内容提取 abstract (取第一段或前 200 字符)."""
-        if not content:
-            return ""
-
-        lines = content.strip().split("\n")
-        for line in lines:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                return line[:200]
-
-        return content[:200]
 
     def _get_search_directories(self, user: str, space: SpaceType) -> List[str]:
         """获取检索的目录列表."""
