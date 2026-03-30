@@ -34,14 +34,7 @@ def _create_chat_service(
     history_service: ChatHistoryService,
 ) -> BaseChatService:
     """工厂函数：根据 memory_mode 创建对应的 ChatService"""
-    if memory_mode == "v0":
-        from app.services.chat_service_v0 import ChatServiceV0
-        return ChatServiceV0(
-            llm=llm,
-            character_service=character_service,
-            history_service=history_service,
-        )
-    elif memory_mode == "v2":
+    if memory_mode == "v2":
         from app.services.chat_service_v2 import ChatServiceV2
         return ChatServiceV2(
             llm=llm,
