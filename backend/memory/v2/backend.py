@@ -17,6 +17,7 @@ class MemoryV2Backend(MemoryBackend):
 
     def __init__(self):
         self._chromadb_manager: Optional[Any] = None
+        self._retriever: Optional[Any] = None
         self._session_service: Optional[Any] = None
 
     @property
@@ -27,9 +28,16 @@ class MemoryV2Backend(MemoryBackend):
         """初始化 V2 backend"""
         # 延迟导入，避免循环依赖
         from memory.v2.chromadb_manager import ChromaDBManager
+        from memory.v2.retriever import HierarchicalRetriever
+        from app.services.embedding import EmbeddingService
         from app.services.session_service import SessionService
 
         self._chromadb_manager = ChromaDBManager()
+        embedding_service = EmbeddingService()
+        self._retriever = HierarchicalRetriever(
+            chromadb_manager=self._chromadb_manager,
+            embedding_service=embedding_service,
+        )
         self._session_service = SessionService(chromadb_manager=self._chromadb_manager)
 
         # 存储到 app state 供其他地方使用
@@ -39,16 +47,29 @@ class MemoryV2Backend(MemoryBackend):
         logger.info("✅ V2: SessionService initialized")
 
     async def search(self, query: str, character_id: Optional[str] = None, limit: int = 5) -> List[Dict[str, Any]]:
-        """通过 ChromaDB 搜索记忆"""
-        if not self._chromadb_manager:
+        """通过 HierarchicalRetriever 搜索记忆"""
+        from memory.v2.retriever import SpaceType
+
+        if not self._retriever:
             raise RuntimeError("V2 backend not initialized")
 
-        results = self._chromadb_manager.search_memories(
+        result = await self._retriever.retrieve(
             query=query,
-            character_id=character_id,
-            n_results=limit
+            user=character_id or "user_default",
+            space=SpaceType.USER,
+            limit=limit,
         )
-        return results
+        return [
+            {
+                "uri": ctx.uri,
+                "abstract": ctx.abstract,
+                "overview": ctx.overview,
+                "category": ctx.category,
+                "score": ctx.score,
+                "level": ctx.level,
+            }
+            for ctx in result.matched_contexts
+        ]
 
     async def save_memory(self, character_id: str, content: str, metadata: Optional[Dict] = None) -> Dict[str, Any]:
         """保存记忆到 ChromaDB"""

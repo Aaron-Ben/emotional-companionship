@@ -1,14 +1,19 @@
 """
 Hierarchical retriever for V2 memory system.
 
-基于 ChromaDB 多层级向量检索 + 分数传播的层级记忆检索实现。
+参考 OpenViking 的目录树导航模式，使用 heapq 优先队列驱动递归检索：
+1. 全局搜索 L0+L1 定位起始 category 目录
+2. heapq 按分数高低探索各 category，搜索子节点（所有 level）
+3. L0/L1 → 继续深入 / L2 → 收集为最终结果
+4. 收敛检测：top-k 连续不变则提前退出
 """
 
+import heapq
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import aiofiles
 
@@ -17,18 +22,17 @@ logger = logging.getLogger(__name__)
 # 数据目录基础路径
 DATA_DIR = Path(__file__).parent.parent.parent.parent / "data"
 
-# Score propagation: weight for direct vector score vs sibling boost
-SCORE_PROPAGATION_ALPHA = 0.7
-
 
 class ContextType(str, Enum):
     """Context type for retrieval."""
+
     MEMORY = "memory"
     SESSION = "session"
 
 
 class SpaceType(str, Enum):
     """Space type for retrieval."""
+
     USER = "user"
     AGENT = "agent"
 
@@ -36,6 +40,7 @@ class SpaceType(str, Enum):
 @dataclass
 class RelatedContext:
     """Related context with summary."""
+
     uri: str
     abstract: str
 
@@ -43,6 +48,7 @@ class RelatedContext:
 @dataclass
 class MatchedContext:
     """Matched context from retrieval."""
+
     uri: str
     context_type: ContextType
     level: int = 2
@@ -57,13 +63,36 @@ class MatchedContext:
 @dataclass
 class QueryResult:
     """Result for a query."""
+
     query: str
     matched_contexts: List[MatchedContext]
     searched_directories: List[str]
 
 
 class HierarchicalRetriever:
-    """层级记忆检索器，支持多层级 ChromaDB 搜索和分数传播。"""
+    """层级记忆检索器，使用 heapq 优先队列驱动的目录树导航。
+
+    检索管线（参考 OpenViking）：
+    1. 全局搜索 L0+L1 → 定位有希望的 category 目录
+    2. heapq 优先队列 → 按分数高低探索各 category
+    3. 递归搜索子节点 → L0/L1 继续深入，L2 收集结果
+    4. 收敛检测 → top-k 连续 N 轮不变则提前退出
+    """
+
+    # 剪枝阈值
+    MIN_SCORE_THRESHOLD: float = 0.2
+    SESSION_BASE_SCORE: float = 0.3
+    GLOBAL_SEARCH_TOPK: int = 5
+
+    # 分数传播
+    SCORE_PROPAGATION_ALPHA: float = 0.5  # 子级自身权重 (1-α = 父级传播权重)
+
+    # 收敛控制
+    MAX_CONVERGENCE_ROUNDS: int = 3
+    MAX_TRAVERSAL_ROUNDS: int = 10
+
+    # L2 终端层级
+    TERMINAL_LEVEL: int = 2
 
     def __init__(
         self,
@@ -74,6 +103,10 @@ class HierarchicalRetriever:
         self._chromadb = chromadb_manager
         self._embedding = embedding_service
         self._data_dir = data_dir or DATA_DIR
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     async def retrieve(
         self,
@@ -103,135 +136,317 @@ class HierarchicalRetriever:
                 searched_directories=[],
             )
 
-        results: List[MatchedContext] = []
+        # Step 2: 全局搜索 L0+L1，定位起始 category 目录
+        global_results = await self._global_search(query_vector, user, space)
 
-        # Step 2: ChromaDB 向量检索 (all levels: L0, L1, L2)
-        chroma_results = await self._search_all_levels(
+        # Step 3: 确定起始点（全局搜索结果 + 根 category 目录）
+        starting_points = self._build_starting_points(user, space, global_results)
+        logger.info(
+            f"[HierarchicalRetriever] Starting points: {len(starting_points)} "
+            f"(global hits: {len(global_results)})"
+        )
+
+        # Step 4: heapq 递归搜索
+        candidates = await self._recursive_search(
             query_vector=query_vector,
+            starting_points=starting_points,
             user=user,
             space=space,
             limit=limit,
         )
-        results.extend(chroma_results)
 
-        # Step 3: 分数传播
-        results = self._propagate_scores(results)
+        # Step 5: 转换为 MatchedContext
+        matched = self._convert_to_matched_contexts(candidates)
 
-        # Step 4: 会话文件检索 (filesystem, sessions not in ChromaDB)
+        # Step 6: 会话文件补充
         session_results = await self._search_session_files(user, limit)
-        results.extend(session_results)
+        matched.extend(session_results)
 
-        # Step 5: 按 score 排序并返回
-        results.sort(key=lambda x: x.score, reverse=True)
-        final_results = results[:limit]
+        # 排序返回
+        matched.sort(key=lambda x: x.score, reverse=True)
 
         logger.info(
-            f"[HierarchicalRetriever] Retrieved {len(final_results)} results "
+            f"[HierarchicalRetriever] Retrieved {len(matched[:limit])} results "
             f"for query: {query[:50]}..."
         )
 
         return QueryResult(
             query=query,
-            matched_contexts=final_results,
+            matched_contexts=matched[:limit],
             searched_directories=self._get_search_directories(user, space),
         )
 
-    async def _search_all_levels(
+    # ------------------------------------------------------------------
+    # Step 2: 全局搜索 L0+L1
+    # ------------------------------------------------------------------
+
+    async def _global_search(
         self,
         query_vector: List[float],
         user: str,
         space: SpaceType,
-        limit: int,
-    ) -> List[MatchedContext]:
-        """从 ChromaDB 检索全部层级 (L0, L1, L2) 的向量匹配结果."""
-        if space == SpaceType.AGENT:
-            owner_space = f"agent:{user}"
-        else:
-            owner_space = user
+    ) -> List[Dict[str, Any]]:
+        """全局搜索 L0+L1，定位有希望的起始目录/记忆。
 
+        参考 OpenViking search_global_roots_in_tenant: In("level", [0, 1])
+        """
+        owner_space = user if space == SpaceType.USER else f"agent:{user}"
         category_prefix = f"data/{space.value}/{user}/memories/"
 
         try:
-            # Search all levels — limit*3 to account for multi-level records per URI
-            chroma_results = await self._chromadb.search_similar_memories(
+            # 搜索所有 level 不过滤，但取更多结果
+            # 实际只有 L0/L1/L2 三种，这里取足够多来覆盖 L0+L1
+            results = await self._chromadb.search_similar_memories(
                 owner_space=owner_space,
                 category_uri_prefix=category_prefix,
                 query_vector=query_vector,
-                limit=limit,
-                # No level_filter → search L0, L1, L2
+                limit=self.GLOBAL_SEARCH_TOPK * 3,
             )
 
-            # De-duplicate by URI: keep the highest-scoring record per URI
-            best_by_uri: Dict[str, MatchedContext] = {}
-            for r in chroma_results:
-                uri = r.get("uri", "")
-                score = r.get("_score", 0.0)
-                if uri not in best_by_uri or score > best_by_uri[uri].score:
-                    best_by_uri[uri] = MatchedContext(
-                        uri=uri,
-                        context_type=ContextType.MEMORY,
-                        level=r.get("level", 2),
-                        abstract=r.get("abstract", ""),
-                        overview=r.get("overview", None),
-                        category=r.get("category", ""),
-                        score=score,
-                    )
+            # 只保留 L0 和 L1 结果（过滤掉 L2）
+            filtered = [
+                r for r in results
+                if r.get("level", 2) in (0, 1)
+                and r.get("_score", 0.0) >= self.MIN_SCORE_THRESHOLD
+            ]
 
-            return list(best_by_uri.values())
+            return filtered
 
         except Exception as e:
-            logger.error(f"[HierarchicalRetriever] ChromaDB search failed: {e}")
+            logger.error(f"[HierarchicalRetriever] Global search failed: {e}")
             return []
 
-    def _propagate_scores(self, results: List[MatchedContext]) -> List[MatchedContext]:
-        """基于 parent_uri 的分数传播：同一目录下的兄弟记忆互相提升分数.
+    # ------------------------------------------------------------------
+    # Step 3: 构建起始点
+    # ------------------------------------------------------------------
 
-        公式: final_score = alpha * self_score + (1 - alpha) * max(sibling_scores)
-        单条记忆（无兄弟）保持原分不变。
+    def _build_starting_points(
+        self,
+        user: str,
+        space: SpaceType,
+        global_results: List[Dict[str, Any]],
+    ) -> List[Tuple[str, float]]:
+        """合并全局搜索结果与根 category 目录作为起始点。
+
+        Returns:
+            List of (uri, score) tuples，uri 可以是 category 目录或具体记忆 uri
         """
-        if not results:
-            return results
+        points: List[Tuple[str, float]] = []
+        seen: Set[str] = set()
 
-        # Group by parent directory (derived from URI)
-        parent_groups: Dict[str, List[MatchedContext]] = {}
-        for r in results:
-            # e.g. "data/user/u1/memories/preferences/mem_xxx.md" → "data/user/u1/memories/preferences"
-            parent_key = r.uri.rsplit("/", 1)[0] if "/" in r.uri else r.uri
-            parent_groups.setdefault(parent_key, []).append(r)
+        # 全局搜索命中：提取 category 目录作为起始点
+        for r in global_results:
+            uri = r.get("uri", "")
+            score = r.get("_score", 0.0)
+            # 从记忆 uri 提取 category 目录路径
+            # e.g. "data/user/test_user/memories/preferences/mem_xxx.md"
+            #   → "data/user/test_user/memories/preferences"
+            category_dir = self._extract_category_dir(uri)
+            if category_dir and category_dir not in seen:
+                # 同一 category 可能有多条命中，取最高分
+                heapq.heappush(points, (-score, category_dir))
+                seen.add(category_dir)
 
-        propagated = []
-        for ctx in results:
-            parent_key = ctx.uri.rsplit("/", 1)[0] if "/" in ctx.uri else ctx.uri
-            siblings = parent_groups.get(parent_key, [])
+        # 补入所有 category 根目录（未被子覆盖的）
+        root_categories = self._get_category_roots(user, space)
+        for cat_dir in root_categories:
+            if cat_dir not in seen:
+                points.append((0.0, cat_dir))  # score=0，最低优先级
+                seen.add(cat_dir)
 
-            if len(siblings) <= 1:
-                # No siblings, keep original score
-                propagated.append(ctx)
+        # 将 heapq 转为按分数降序的列表
+        # points 中存的是 (-score, uri)，heappop 得到最高分（最负值）
+        sorted_points = []
+        while points:
+            neg_score, uri = heapq.heappop(points)
+            sorted_points.append((uri, -neg_score))
+        sorted_points.reverse()  # 最高分在前
+
+        return sorted_points
+
+    # ------------------------------------------------------------------
+    # Step 4: heapq 递归搜索
+    # ------------------------------------------------------------------
+
+    async def _recursive_search(
+        self,
+        query_vector: List[float],
+        starting_points: List[Tuple[str, float]],
+        user: str,
+        space: SpaceType,
+        limit: int,
+    ) -> List[Dict[str, Any]]:
+        """heapq 优先队列驱动的递归搜索。
+
+        参考 OpenViking _recursive_search：
+        - 从起始点开始，按分数高低探索
+        - 搜索每个目录的子节点（所有 level）
+        - L0/L1 继续深入，L2 收集为结果
+        - 收敛检测提前退出
+        """
+        owner_space = user if space == SpaceType.USER else f"agent:{user}"
+
+        collected_by_uri: Dict[str, Dict[str, Any]] = {}
+        dir_queue: List[Tuple[float, str]] = []  # min-heap: (-score, uri)
+        visited: Set[str] = set()
+        prev_topk_uris: Set[str] = set()
+        convergence_rounds = 0
+        round_count = 0
+
+        alpha = self.SCORE_PROPAGATION_ALPHA
+
+        # 初始化优先队列
+        for uri, score in starting_points:
+            heapq.heappush(dir_queue, (-score, uri))
+
+        while dir_queue and round_count < self.MAX_TRAVERSAL_ROUNDS:
+            round_count += 1
+
+            neg_score, current_uri = heapq.heappop(dir_queue)
+            current_score = -neg_score
+
+            if current_uri in visited:
+                continue
+            visited.add(current_uri)
+
+            # 搜索当前 category 目录下的子节点（所有 level）
+            try:
+                results = await self._chromadb.search_similar_memories(
+                    owner_space=owner_space,
+                    category_uri_prefix=current_uri,
+                    query_vector=query_vector,
+                    limit=max(limit * 2, 20),
+                )
+            except Exception as e:
+                logger.error(
+                    f"[HierarchicalRetriever] Search failed for {current_uri}: {e}"
+                )
                 continue
 
-            # Max sibling score (excluding self)
-            sibling_scores = [s.score for s in siblings if s.uri != ctx.uri]
-            max_sibling_score = max(sibling_scores) if sibling_scores else 0.0
+            if not results:
+                continue
 
-            # Weighted combination
-            final_score = (
-                SCORE_PROPAGATION_ALPHA * ctx.score
-                + (1 - SCORE_PROPAGATION_ALPHA) * max_sibling_score
+            for r in results:
+                uri = r.get("uri", "")
+                score = r.get("_score", 0.0)
+                level = r.get("level", 2)
+
+                # 分数传播：混合子级自身分数与父级分数
+                final_score = (
+                    alpha * score + (1 - alpha) * current_score
+                    if current_score > 0
+                    else score
+                )
+
+                # 阈值剪枝
+                if final_score < self.MIN_SCORE_THRESHOLD:
+                    continue
+
+                # 去重：同一 URI 保留最高分
+                previous = collected_by_uri.get(uri)
+                if previous is None or final_score > previous.get("_final_score", 0):
+                    collected_by_uri[uri] = {**r, "_final_score": final_score}
+
+                # L0/L1 → 继续深入（作为目录进一步搜索其子节点）
+                # L2 → 终端命中，已收集在 collected_by_uri
+                if uri not in visited and level != self.TERMINAL_LEVEL:
+                    heapq.heappush(dir_queue, (-final_score, uri))
+
+            # 收敛检测
+            current_topk = sorted(
+                collected_by_uri.values(),
+                key=lambda x: x.get("_final_score", 0),
+                reverse=True,
+            )[:limit]
+            current_topk_uris = {c.get("uri", "") for c in current_topk}
+
+            if current_topk_uris == prev_topk_uris and len(current_topk_uris) >= limit:
+                convergence_rounds += 1
+                if convergence_rounds >= self.MAX_CONVERGENCE_ROUNDS:
+                    logger.info(
+                        f"[HierarchicalRetriever] Converged after {round_count} rounds"
+                    )
+                    break
+            else:
+                convergence_rounds = 0
+                prev_topk_uris = current_topk_uris
+
+        # 按 final_score 降序返回
+        collected = sorted(
+            collected_by_uri.values(),
+            key=lambda x: x.get("_final_score", 0),
+            reverse=True,
+        )
+        return collected[:limit]
+
+    # ------------------------------------------------------------------
+    # Step 5: 结果转换
+    # ------------------------------------------------------------------
+
+    def _convert_to_matched_contexts(
+        self,
+        candidates: List[Dict[str, Any]],
+    ) -> List[MatchedContext]:
+        """将搜索候选转换为 MatchedContext 列表。"""
+        results: List[MatchedContext] = []
+
+        for c in candidates:
+            score = c.get("_final_score", c.get("_score", 0.0))
+            level = c.get("level", 2)
+
+            results.append(
+                MatchedContext(
+                    uri=c.get("uri", ""),
+                    context_type=ContextType.MEMORY,
+                    level=level,
+                    abstract=c.get("abstract", ""),
+                    overview=c.get("overview", None),
+                    category=c.get("category", ""),
+                    score=score,
+                )
             )
-            ctx.score = final_score
-            propagated.append(ctx)
 
-        return propagated
+        return results
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_category_dir(uri: str) -> str:
+        """从记忆 URI 提取 category 目录路径。
+
+        "data/user/test_user/memories/preferences/mem_xxx.md"
+          → "data/user/test_user/memories/preferences"
+        """
+        if "/memories/" not in uri:
+            return uri
+        # 找到 /memories/ 后的部分
+        idx = uri.index("/memories/") + len("/memories/")
+        rest = uri[idx:]
+        # category 是第一个路径段
+        if "/" in rest:
+            category = rest.split("/")[0]
+            return uri[:idx] + category
+        return uri
+
+    def _get_category_roots(self, user: str, space: SpaceType) -> List[str]:
+        """返回所有 category 根目录 URI。"""
+        base = f"data/{space.value}/{user}/memories"
+        # 已知的 category 目录
+        categories = ["preferences", "entities", "events", "cases", "patterns"]
+        return [f"{base}/{cat}" for cat in categories]
+
+    # ------------------------------------------------------------------
+    # Session file search (unchanged)
+    # ------------------------------------------------------------------
 
     async def _search_session_files(
         self,
         user: str,
         limit: int,
     ) -> List[MatchedContext]:
-        """搜索会话目录中的 .abstract.md 和 .overview.md 文件.
-
-        会话文件不进入 ChromaDB，使用简单的关键词匹配。
-        """
+        """搜索会话目录中的 .abstract.md 和 .overview.md 文件."""
         results: List[MatchedContext] = []
         session_dir = self._data_dir / "session" / user
 
@@ -257,7 +472,7 @@ class HierarchicalRetriever:
                                 level=0,
                                 abstract=content,
                                 category="session",
-                                score=0.1,  # baseline score for session files
+                                score=self.SESSION_BASE_SCORE,
                             )
                         )
 
@@ -273,7 +488,7 @@ class HierarchicalRetriever:
                                 level=1,
                                 overview=content,
                                 category="session",
-                                score=0.1,
+                                score=self.SESSION_BASE_SCORE,
                             )
                         )
 
@@ -295,7 +510,7 @@ class HierarchicalRetriever:
                                         level=0,
                                         abstract=content,
                                         category="session_archive",
-                                        score=0.1,
+                                        score=self.SESSION_BASE_SCORE,
                                     )
                                 )
 
@@ -310,7 +525,7 @@ class HierarchicalRetriever:
                                         level=1,
                                         overview=content,
                                         category="session_archive",
-                                        score=0.1,
+                                        score=self.SESSION_BASE_SCORE,
                                     )
                                 )
         except Exception as e:
